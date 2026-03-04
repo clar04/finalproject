@@ -1,133 +1,221 @@
-import requests
-from bs4 import BeautifulSoup
-import time
+"""
+Female Daily - Product Review Scraper
+======================================
+Scrapes product metadata & all paginated reviews from Female Daily product URLs.
+
+Usage:
+    python female_daily_scraper.py
+
+Input  : test-link.txt        (one product URL per line)
+Output : data/raw/test_raw_data.csv
+"""
+
 import csv
 import os
+import time
+import requests
+from bs4 import BeautifulSoup
+
+
+# ──────────────────────────────────────────────
+# CONFIG
+# ──────────────────────────────────────────────
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 }
 
-LINK_FILE = "test-link.txt"
+LINK_FILE  = "test-link.txt"
 OUTPUT_CSV = "data/raw/test_raw_data.csv"
+REQUEST_DELAY = 1.5   # seconds between page requests
+REQUEST_TIMEOUT = 20  # seconds per request
 
 
-def get_soup(url):
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    r.raise_for_status()
-    return BeautifulSoup(r.text, "html.parser")
+# ──────────────────────────────────────────────
+# HTTP
+# ──────────────────────────────────────────────
+
+def get_soup(url: str) -> BeautifulSoup:
+    """Fetch a URL and return a BeautifulSoup object."""
+    response = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    return BeautifulSoup(response.text, "html.parser")
 
 
-# =======================
-# PRODUCT METADATA
-# =======================
-def extract_product_metadata(soup):
-    def safe_text(selector):
-        el = soup.select_one(selector)
-        return el.get_text(strip=True) if el else None
+# ──────────────────────────────────────────────
+# EXTRACTORS
+# ──────────────────────────────────────────────
+
+def _safe_text(soup: BeautifulSoup, selector: str) -> str | None:
+    """Return stripped text of the first matching element, or None."""
+    element = soup.select_one(selector)
+    return element.get_text(strip=True) if element else None
+
+
+def extract_product_metadata(soup: BeautifulSoup, product_url: str) -> dict:
+    """
+    Extract product-level fields from a product page.
+
+    Target classes (JSX-hashed, matched via suffix):
+        .product-brand  → brand name
+        .product-name   → product name
+        .product-shade  → shade / variant
+        .product-price  → price
+    Overall rating is pulled from the first numeric span inside .product-summary.
+    """
+
+    # JSX class names include dynamic hashes (e.g. jsx-2016320139 product-brand).
+    # We use attribute CSS selectors that match *any* class containing the keyword.
+    brand  = _safe_text(soup, '[class*="product-brand"]')
+    name   = _safe_text(soup, '[class*="product-name"]')
+    shade  = _safe_text(soup, '[class*="product-shade"]')
+    price  = _safe_text(soup, '[class*="product-price"]')
+
+    # Overall rating: first span inside .product-summary whose text is a number
+    overall_rating = None
+    for span in soup.select('[class*="product-summary"] span'):
+        text = span.get_text(strip=True)
+        if text.replace(".", "", 1).isdigit():
+            overall_rating = text
+            break
 
     return {
-        "product_brand": safe_text(".product-brand"),
-        "product_name": safe_text(".product-name"),
-        "product_shade": safe_text(".product-shade"),
-        "product_price": safe_text(".product-price"),
+        "product_url":     product_url,
+        "product_brand":   brand,
+        "product_name":    name,
+        "product_shade":   shade,
+        "product_price":   price,
+        "overall_rating":  overall_rating,
     }
 
 
-# =======================
-# REVIEWS
-# =======================
-def extract_reviews(soup):
+def extract_reviews(soup: BeautifulSoup) -> list[dict]:
+    """
+    Extract all review cards from a single page.
+
+    Targets:
+        .review-date   → publication date
+        .text-content  → review body text
+    """
     reviews = []
 
-    review_cards = soup.select("div.review-card")
+    for card in soup.select("div.review-card"):
+        text_el = card.select_one(".text-content")
+        date_el = card.select_one(".review-date")
 
-    for card in review_cards:
-        review_text = card.select_one(".review-text")
-        review_date = card.select_one(".review-date")
+        review_text = text_el.get_text(" ", strip=True) if text_el else None
+        review_date = date_el.get_text(strip=True)      if date_el else None
 
-        reviews.append({
-            "review_text": review_text.get_text(strip=True) if review_text else None,
-            "review_date": review_date.get_text(strip=True) if review_date else None
-        })
+        if review_text:
+            reviews.append({
+                "review_text": review_text,
+                "review_date": review_date,
+            })
 
     return reviews
 
 
-# =======================
-# SCRAPER PER PRODUCT
-# =======================
-def scrape_product(product_url):
-    all_reviews = []
+# ──────────────────────────────────────────────
+# SCRAPER
+# ──────────────────────────────────────────────
+
+def scrape_product(product_url: str) -> list[dict]:
+    """
+    Scrape all reviews for a single product URL, following pagination
+    automatically until no more reviews are found.
+
+    Returns a flat list of dicts — one row per review.
+    """
+    all_rows: list[dict] = []
+    product_meta: dict | None = None
     page = 1
-    product_meta = None
 
     while True:
         paged_url = f"{product_url}?page={page}"
-        print(f"Scraping page {page}: {paged_url}")
+        print(f"  → Page {page}: {paged_url}")
 
-        soup = get_soup(paged_url)
+        try:
+            soup = get_soup(paged_url)
+        except requests.RequestException as exc:
+            print(f"  [WARN] Failed to fetch page {page}: {exc}")
+            break
 
+        # Extract metadata only once (from page 1)
         if product_meta is None:
-            product_meta = extract_product_metadata(soup)
-            product_meta["product_url"] = product_url
+            product_meta = extract_product_metadata(soup, product_url)
+            print(
+                f"  Product: {product_meta['product_brand']} – "
+                f"{product_meta['product_name']}"
+            )
 
         reviews = extract_reviews(soup)
 
-        # STOP kalau tidak ada review
         if not reviews:
+            print(f"  No reviews found on page {page}. Stopping pagination.")
             break
 
-        for r in reviews:
-            all_reviews.append({**product_meta, **r})
+        for review in reviews:
+            all_rows.append({**product_meta, **review})
 
+        print(f"  Collected {len(reviews)} reviews (total so far: {len(all_rows)})")
         page += 1
-        time.sleep(1)
+        time.sleep(REQUEST_DELAY)
 
-    return all_reviews
+    return all_rows
 
 
-# =======================
-# UTIL
-# =======================
-def load_product_links(path):
-    with open(path, "r", encoding="utf-8") as f:
+# ──────────────────────────────────────────────
+# I/O HELPERS
+# ──────────────────────────────────────────────
+
+def load_links(path: str) -> list[str]:
+    """Read product URLs from a text file (one URL per line)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Link file not found: {path}")
+    with open(path, encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
 
-def save_to_csv(data, output_path):
+def save_csv(data: list[dict], path: str) -> None:
+    """Write scraped data to a CSV file, creating parent directories as needed."""
     if not data:
-        print("No data collected.")
+        print("No data to save.")
         return
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    fieldnames = data[0].keys()
-
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
 
-    print(f"Saved {len(data)} rows to {output_path}")
+    print(f"\n✓ Saved {len(data)} rows → {path}")
 
 
-# =======================
+# ──────────────────────────────────────────────
 # MAIN
-# =======================
-def main():
-    product_links = load_product_links(LINK_FILE)
-    all_data = []
+# ──────────────────────────────────────────────
 
-    for idx, link in enumerate(product_links, start=1):
-        print(f"\n[{idx}/{len(product_links)}] Processing product")
+def main() -> None:
+    links = load_links(LINK_FILE)
+    print(f"Loaded {len(links)} product link(s) from '{LINK_FILE}'\n")
+
+    all_data: list[dict] = []
+
+    for index, link in enumerate(links, start=1):
+        print(f"[{index}/{len(links)}] Scraping: {link}")
         try:
-            product_data = scrape_product(link)
-            all_data.extend(product_data)
-        except Exception as e:
-            print(f"FAILED: {link} | {e}")
+            rows = scrape_product(link)
+            all_data.extend(rows)
+            print(f"  Done. {len(rows)} review(s) collected.")
+        except Exception as exc:
+            print(f"  [ERROR] Skipping product — {exc}")
 
-    save_to_csv(all_data, OUTPUT_CSV)
+    save_csv(all_data, OUTPUT_CSV)
 
 
 if __name__ == "__main__":
