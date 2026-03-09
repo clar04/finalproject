@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────────────────
+# requirements-ai.txt
+# Dependensi untuk pipeline scraping & analisis Female Daily
+#
+# Install:
+#   pip install -r requirements-ai.txt
+#   python -m playwright install chromium
+# ─────────────────────────────────────────────────────────────
+
+# ── Web Scraping ──────────────────────────────────────────────
+playwright==1.58.0          # headless browser untuk scraping JS-rendered pages
+beautifulsoup4==4.14.3      # HTML parsing (fallback / preprocessing)
+requests==2.32.5            # HTTP requests
+
+# ── Data Processing ───────────────────────────────────────────
+pandas==2.3.3               # manipulasi & analisis data CSV/DataFrame
+numpy==2.2.6                # operasi numerik
+
+# ── Utilities ─────────────────────────────────────────────────
+python-dotenv==1.2.2        # load variabel dari file .env
+python-dateutil==2.9.0.post0  # parsing tanggal review

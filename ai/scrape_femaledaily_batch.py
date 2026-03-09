@@ -30,7 +30,7 @@ HEADERS = {
 }
 
 LINK_FILE  = "test-link.txt"
-OUTPUT_CSV = "data/raw/test_raw_data.csv"
+OUTPUT_CSV = "data/raw/test_raw_data5.csv"
 REQUEST_DELAY = 1.5   # seconds between page requests
 REQUEST_TIMEOUT = 20  # seconds per request
 
@@ -60,36 +60,25 @@ def extract_product_metadata(soup: BeautifulSoup, product_url: str) -> dict:
     """
     Extract product-level fields from a product page.
 
-    Target classes (JSX-hashed, matched via suffix):
-        .product-brand  → brand name
-        .product-name   → product name
-        .product-shade  → shade / variant
-        .product-price  → price
-    Overall rating is pulled from the first numeric span inside .product-summary.
+    Female Daily uses JSX-hashed class names, e.g.:
+        class="jsx-2016320139 jsx-2462230538 product-brand"
+        class="jsx-2016320139 jsx-2462230538 product-name"
+        class="jsx-2016320139 jsx-2462230538 product-shade"
+        class="jsx-2016320139 jsx-2462230538 product-price"
+
+    We match using [class*="keyword"] to handle the dynamic hash prefixes.
     """
-
-    # JSX class names include dynamic hashes (e.g. jsx-2016320139 product-brand).
-    # We use attribute CSS selectors that match *any* class containing the keyword.
-    brand  = _safe_text(soup, '[class*="product-brand"]')
-    name   = _safe_text(soup, '[class*="product-name"]')
-    shade  = _safe_text(soup, '[class*="product-shade"]')
-    price  = _safe_text(soup, '[class*="product-price"]')
-
-    # Overall rating: first span inside .product-summary whose text is a number
-    overall_rating = None
-    for span in soup.select('[class*="product-summary"] span'):
-        text = span.get_text(strip=True)
-        if text.replace(".", "", 1).isdigit():
-            overall_rating = text
-            break
+    brand = _safe_text(soup, '[class*="product-brand"]')
+    name  = _safe_text(soup, '[class*="product-name"]')
+    shade = _safe_text(soup, '[class*="product-shade"]')
+    price = _safe_text(soup, '[class*="product-price"]')
 
     return {
-        "product_url":     product_url,
-        "product_brand":   brand,
-        "product_name":    name,
-        "product_shade":   shade,
-        "product_price":   price,
-        "overall_rating":  overall_rating,
+        "product_url":   product_url,
+        "product_brand": brand,
+        "product_name":  name,
+        "product_shade": shade,
+        "product_price": price,
     }
 
 
@@ -97,9 +86,9 @@ def extract_reviews(soup: BeautifulSoup) -> list[dict]:
     """
     Extract all review cards from a single page.
 
-    Targets:
-        .review-date   → publication date
-        .text-content  → review body text
+    Targets inside each div.review-card:
+        class="review-date"   → publication date
+        class="text-content"  → review body text
     """
     reviews = []
 
@@ -108,12 +97,12 @@ def extract_reviews(soup: BeautifulSoup) -> list[dict]:
         date_el = card.select_one(".review-date")
 
         review_text = text_el.get_text(" ", strip=True) if text_el else None
-        review_date = date_el.get_text(strip=True)      if date_el else None
+        review_date = date_el.get_text(strip=True)       if date_el else None
 
         if review_text:
             reviews.append({
-                "review_text": review_text,
                 "review_date": review_date,
+                "review_text": review_text,
             })
 
     return reviews
