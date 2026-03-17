@@ -4,3 +4,6 @@ ai/venv
 backend/app/__pycache__
 frontend/node_modules
 frontend/dist
+label-studio/.env
+label-studio/backups/*
+label-studio/import/README.md

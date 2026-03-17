@@ -1,0 +1,103 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════════
+#  Label Studio — Dedicated Docker Compose
+# ═══════════════════════════════════════════════════════════════
+#  Stack:
+#    1. PostgreSQL 15  — Database backend (multi-user support)
+#    2. Label Studio   — Annotation UI
+#    3. Backup Service — Automated periodic backups
+#
+#  Usage:
+#    docker-compose up -d
+#    docker-compose down
+#
+#  Access:
+#    http://localhost:8085
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  # ── 1. PostgreSQL Database ──────────────────────────────────
+  # Required for multi-user support (SQLite doesn't support it)
+  postgres:
+    image: postgres:15-alpine
+    container_name: ls_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ls_network
+
+  # ── 2. Label Studio ────────────────────────────────────────
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: label_studio
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8085:8080"
+    environment:
+      # Admin account (created on first launch)
+      LABEL_STUDIO_USERNAME: ${LABEL_STUDIO_USERNAME}
+      LABEL_STUDIO_PASSWORD: ${LABEL_STUDIO_PASSWORD}
+
+      # PostgreSQL connection (enables multi-user)
+      DJANGO_DB: ${DJANGO_DB}
+      POSTGRE_NAME: ${POSTGRESQL_NAME}
+      POSTGRE_USER: ${POSTGRESQL_USER}
+      POSTGRE_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRE_HOST: ${POSTGRESQL_HOST}
+      POSTGRE_PORT: ${POSTGRESQL_PORT}
+    volumes:
+      - ls_data:/label-studio/data
+      - ./import:/label-studio/data/import
+    networks:
+      - ls_network
+
+  # ── 3. Automated Backup Service ─────────────────────────────
+  backup:
+    image: postgres:15-alpine
+    container_name: ls_backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRESQL_HOST: ${POSTGRESQL_HOST}
+      POSTGRESQL_PORT: ${POSTGRESQL_PORT}
+      POSTGRESQL_USER: ${POSTGRESQL_USER}
+      POSTGRESQL_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRESQL_NAME: ${POSTGRESQL_NAME}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL}
+      BACKUP_RETENTION: ${BACKUP_RETENTION}
+    volumes:
+      - ./backups:/backups
+      - ls_data:/label-studio-data:ro
+      - ./scripts/backup.sh:/scripts/backup.sh:ro
+    entrypoint: ["bash", "/scripts/backup.sh"]
+    networks:
+      - ls_network
+
+# ── Volumes (persistent) ─────────────────────────────────────
+volumes:
+  postgres_data:
+    name: ls_postgres_data
+  ls_data:
+    name: ls_app_data
+
+# ── Network ──────────────────────────────────────────────────
+networks:
+  ls_network:
+    name: label_studio_network
