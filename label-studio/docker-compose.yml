@@ -52,6 +52,9 @@ services:
       # Admin account (created on first launch)
       LABEL_STUDIO_USERNAME: ${LABEL_STUDIO_USERNAME}
       LABEL_STUDIO_PASSWORD: ${LABEL_STUDIO_PASSWORD}
+      LABEL_STUDIO_HOST:      ${LABEL_STUDIO_HOST}
+      CSRF_TRUSTED_ORIGINS: "https://*.trycloudflare.com"
+      LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"
 
       # PostgreSQL connection (enables multi-user)
       DJANGO_DB: ${DJANGO_DB}
@@ -87,6 +90,17 @@ services:
       - ls_data:/label-studio-data:ro
       - ./scripts/backup.sh:/scripts/backup.sh:ro
     entrypoint: ["bash", "/scripts/backup.sh"]
+    networks:
+      - ls_network
+
+# ── 4. Cloudflared Tunneling ─────────────────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: label_studio_tunnel
+    restart: unless-stopped
+    depends_on:
+      - label-studio
+    command: tunnel --no-autoupdate --url http://label_studio:8080
     networks:
       - ls_network
 
