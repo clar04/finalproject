@@ -48,12 +48,19 @@ services:
         condition: service_healthy
     ports:
       - "8085:8080"
+      # healthcheck:to fix race condition
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     environment:
       # Admin account (created on first launch)
       LABEL_STUDIO_USERNAME: ${LABEL_STUDIO_USERNAME}
       LABEL_STUDIO_PASSWORD: ${LABEL_STUDIO_PASSWORD}
       LABEL_STUDIO_HOST:      ${LABEL_STUDIO_HOST}
-      CSRF_TRUSTED_ORIGINS: "https://*.trycloudflare.com"
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
       LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"
 
       # PostgreSQL connection (enables multi-user)
@@ -100,7 +107,7 @@ services:
     restart: unless-stopped
     depends_on:
       - label-studio
-    command: tunnel --no-autoupdate --url http://label_studio:8080
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - ls_network
 
