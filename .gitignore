@@ -7,3 +7,4 @@ frontend/dist
 label-studio/.env
 label-studio/backups/*
 label-studio/import/README.md
+ai/data/anotasi/venv/*
