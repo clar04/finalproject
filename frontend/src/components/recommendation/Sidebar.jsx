@@ -11,8 +11,8 @@ const ASPECTS = [
 export default function Sidebar({
   selectedFilters,
   onFilterChange,
-  showTrending,
-  onTrendingChange,
+  // showTrending,
+  // onTrendingChange,
 }) {
   const toggleFilter = (id) => {
     if (selectedFilters.includes(id)) {
@@ -74,7 +74,7 @@ export default function Sidebar({
 
         {/* Trending Toggle */}
         <div className="border-t border-border pt-5">
-          <button
+          {/* <button
             onClick={() => onTrendingChange(!showTrending)}
             className={`w-full flex items-center justify-between p-3 rounded-lg transition-all ${
               showTrending ? 'bg-primary/10' : 'bg-background hover:bg-border/30'
@@ -91,7 +91,7 @@ export default function Sidebar({
                 <p className="text-[10px] text-text-muted">Rising NSS only</p>
               </div>
             </div>
-            {/* Toggle pill */}
+
             <div className={`w-9 h-5 rounded-full transition-colors relative ${
               showTrending ? 'bg-primary' : 'bg-border'
             }`}>
@@ -99,7 +99,7 @@ export default function Sidebar({
                 showTrending ? 'left-4' : 'left-0.5'
               }`} />
             </div>
-          </button>
+          </button> */}
         </div>
 
         {/* Active filter summary */}

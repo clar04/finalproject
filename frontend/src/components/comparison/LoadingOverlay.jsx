@@ -3,7 +3,7 @@ import { Check, Loader2 } from 'lucide-react'
 
 const STEPS = [
   { id: 'scraping',  label: 'Scraping ulasan Female Daily...' },
-  { id: 'indobert',  label: 'Menjalankan analisis IndoBERT...' },
+  { id: 'indobert',  label: 'Menjalankan analisis...' },
   { id: 'nss',       label: 'Menghitung Net Sentiment Score...' },
   { id: 'chart',     label: 'Menyiapkan visualisasi...' },
 ]

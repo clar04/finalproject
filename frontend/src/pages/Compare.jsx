@@ -6,7 +6,7 @@ import LoadingOverlay from '../components/comparison/LoadingOverlay'
 import NSSRadarChart from '../components/comparison/NSSRadarChart'
 import ReviewSnippets from '../components/comparison/ReviewSnippets'
 import { useCompare } from '../context/CompareContext'
-import { compareProducts } from '../services/api'
+import { compareProducts, scrapeProduct } from '../services/api'
 
 function ProductMiniCard({ product, onRemove }) {
   if (!product) {
@@ -18,7 +18,9 @@ function ProductMiniCard({ product, onRemove }) {
   }
   return (
     <div className="flex-1 bg-primary/5 border border-primary/30 rounded-2xl p-5 flex items-center gap-4">
-      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0">💄</div>
+      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0 overflow-hidden">
+        {product.product_image ? <img src={product.product_image} alt="" className="w-full h-full object-cover" /> : "💄"}
+      </div>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-primary truncate">{product.product_brand}</p>
         <p className="text-sm font-semibold text-text-main leading-snug line-clamp-2">{product.product_name}</p>
@@ -74,11 +76,26 @@ export default function Compare() {
       setError(null)
       setIsLoading(true)
       const start = Date.now()
-      const data = await compareProducts(product1._id, product2._id)
+
+      let p1_id = product1._id
+      let p2_id = product2._id
+
+      if (product1._url) {
+        const scraped1 = await scrapeProduct(product1._url)
+        p1_id = scraped1._id
+        setProduct1(scraped1)
+      }
+      if (product2._url) {
+        const scraped2 = await scrapeProduct(product2._url)
+        p2_id = scraped2._id
+        setProduct2(scraped2)
+      }
+
+      const data = await compareProducts(p1_id, p2_id)
       setProcessingTime(((Date.now() - start) / 1000).toFixed(1))
       setResult(data)
     } catch (err) {
-      setError('Gagal melakukan komparasi. Pastikan backend berjalan.')
+      setError('Gagal melakukan komparasi. Pastikan backend berjalan atau URL valid.')
       console.error(err)
       setIsLoading(false)
     }

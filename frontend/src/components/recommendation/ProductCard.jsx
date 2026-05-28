@@ -59,12 +59,7 @@ export default function ProductCard({ product, selectedFilters }) {
         </div>
 
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          {isTrending && (
-            <span className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-semibold">
-              <Flame className="w-3 h-3" />
-              Trending
-            </span>
-          )}
+          {/* Trending badge di-hide sementara */}
           <span className={`flex items-center gap-1 text-sm font-bold ${getNSSColor(overall_nss)}`}>
             <TrendingUp className="w-3.5 h-3.5" />
             {overall_nss > 0 ? '+' : ''}{overall_nss}

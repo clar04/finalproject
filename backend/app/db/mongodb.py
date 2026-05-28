@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 
@@ -8,8 +9,8 @@ def get_database():
 
 async def connect_db():
     global client
-    client = AsyncIOMotorClient(settings.MONGODB_URL)
-    print(f"✅ Terhubung ke MongoDB: {settings.MONGODB_URL}")
+    client = AsyncIOMotorClient(settings.MONGODB_URI)
+    print(f"✅ Terhubung ke MongoDB: {settings.MONGODB_URI}")
 
 async def close_db():
     global client

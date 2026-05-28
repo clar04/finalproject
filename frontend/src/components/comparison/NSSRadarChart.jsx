@@ -75,18 +75,18 @@ export default function NSSRadarChart({ product1, product2 }) {
             <Radar
               name={product1.product_name}
               dataKey={product1.product_name}
-              stroke="#B5838D"
-              fill="#B5838D"
-              fillOpacity={0.25}
-              strokeWidth={2}
+              stroke="#D62828" 
+              fill="#D62828"
+              fillOpacity={0.4}
+              strokeWidth={3}
             />
             <Radar
               name={product2.product_name}
               dataKey={product2.product_name}
-              stroke="#6D6875"
-              fill="#6D6875"
-              fillOpacity={0.25}
-              strokeWidth={2}
+              stroke="#003049" 
+              fill="#003049"
+              fillOpacity={0.4}
+              strokeWidth={3}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend

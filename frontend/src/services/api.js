@@ -4,7 +4,7 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 
 const api = axios.create({
     baseURL: BASE_URL,
-    timeout: 60000, // 60s — scraping bisa lama
+    timeout: 300000, // 5 menit (300 detik) — scraping & AI processing butuh waktu lama untuk ratusan review
 })
 
 // ─────────────────────────────────────────────
@@ -17,7 +17,12 @@ const api = axios.create({
  */
 export const getAllProducts = async () => {
     const res = await api.get('/api/products')
-    return res.data
+    const raw = res.data
+    // Backend returns { products: [...] } — always coerce to array
+    if (Array.isArray(raw)) return raw
+    if (Array.isArray(raw?.products)) return raw.products
+    console.warn('[api] getAllProducts: unexpected shape', raw)
+    return []
 }
 
 // ─────────────────────────────────────────────

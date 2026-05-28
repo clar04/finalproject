@@ -28,13 +28,6 @@ export default function HeroSection({ product, analysisTime }) {
 
   const stats = [
     {
-      icon: Star,
-      label: 'Average Rating',
-      value: rating ? rating.toFixed(1) : 'N/A',
-      color: 'bg-primary/10',
-      iconColor: 'text-primary',
-    },
-    {
       icon: MessageSquare,
       label: 'Reviews Analyzed',
       value: total_reviews.toLocaleString('id-ID'),
@@ -62,13 +55,17 @@ export default function HeroSection({ product, analysisTime }) {
     <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
 
       {/* Product image placeholder */}
-      <div className="aspect-square bg-surface rounded-2xl border border-border flex items-center justify-center shadow-sm overflow-hidden">
-        <div className="flex flex-col items-center gap-3 text-text-muted">
-          <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
-            <span className="text-4xl">💄</span>
+      <div className="aspect-square bg-surface rounded-2xl border border-border flex items-center justify-center shadow-sm overflow-hidden relative">
+        {product.product_image ? (
+          <img src={product.product_image} alt={product_name} className="w-full h-full object-contain p-4" />
+        ) : (
+          <div className="flex flex-col items-center gap-3 text-text-muted">
+            <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
+              <span className="text-4xl">💄</span>
+            </div>
+            <p className="text-sm font-medium text-primary">{product_brand}</p>
           </div>
-          <p className="text-sm font-medium text-primary">{product_brand}</p>
-        </div>
+        )}
       </div>
 
       {/* Product info */}

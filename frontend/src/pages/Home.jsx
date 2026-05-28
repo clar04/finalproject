@@ -20,7 +20,7 @@ export default function Home() {
       try {
         setIsLoading(true)
         const data = await getAllProducts()
-        setProducts(data)
+        setProducts(Array.isArray(data) ? data : [])
       } catch (err) {
         setError('Gagal memuat produk. Pastikan backend berjalan.')
         console.error(err)
@@ -33,6 +33,7 @@ export default function Home() {
 
   // Filter logic
   const filteredProducts = useMemo(() => {
+    if (!Array.isArray(products)) return []
     return products.filter(product => {
       // Filter search
       if (searchQuery) {

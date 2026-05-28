@@ -1,80 +1,157 @@
+import asyncio
+import re
+import time
+
 import requests
 from bs4 import BeautifulSoup
-import random
+
+# ──────────────────────────────────────────────
+# CONFIG
+# ──────────────────────────────────────────────
 
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Chrome/120.0.0.0 Safari/537.36"
     )
 }
 
-# ── Mock reviews untuk development (sebelum model real) ─────
-MOCK_REVIEW_POOL = [
-    ("Pigmentasinya luar biasa, satu swipe langsung kelihatan!",       "positive", "pigmentation"),
-    ("Warnanya sangat bagus dan sesuai foto di website.",              "positive", "pigmentation"),
-    ("Pigmentasinya agak sheer, perlu beberapa layer.",                "negative", "pigmentation"),
-    ("Warna tidak sesuai ekspektasi, terlalu pudar.",                  "negative", "pigmentation"),
-    ("Tahan lama banget, dari pagi sampai malam masih ada.",           "positive", "longevity"),
-    ("Awet banget dipakai seharian meski makan dan minum.",            "positive", "longevity"),
-    ("Mudah luntur setelah makan, harus retouch terus.",               "negative", "longevity"),
-    ("Tidak tahan lama, habis 2 jam sudah hilang warnanya.",           "negative", "longevity"),
-    ("Teksturnya sangat halus dan nyaman di bibir.",                   "positive", "texture"),
-    ("Tidak terasa berat, ringan banget dipakai seharian.",            "positive", "texture"),
-    ("Teksturnya agak kering, cocok tapi tidak untuk bibir kering.",   "neutral",  "texture"),
-    ("Sedikit berminyak di awal tapi lama-lama nyaman.",               "neutral",  "texture"),
-    ("Bikin bibir kering dan pecah-pecah setelah dipakai lama.",       "negative", "texture"),
-    ("Sangat melembapkan, bibir terasa lembut seharian.",              "positive", "hydration"),
-    ("Tidak bikin bibir kering meski formula matte.",                  "positive", "hydration"),
-    ("Cukup melembapkan untuk lip cream matte.",                       "neutral",  "hydration"),
-    ("Bikin bibir kering, perlu pakai lip balm dulu.",                 "negative", "hydration"),
-    ("Harganya sangat worth it untuk kualitas sebagus ini!",           "positive", "price"),
-    ("Terjangkau banget, kualitas premium harga drugstore.",           "positive", "price"),
-    ("Harga standar, sesuai dengan kualitasnya.",                      "neutral",  "price"),
-]
+REQUEST_TIMEOUT  = 20    # seconds per HTTP request
+REQUEST_DELAY    = 0.5   # seconds between page requests
+MAX_EMPTY_PAGES  = 2     # stop after N consecutive empty pages (guard against infinite loop)
+MAX_PAGES        = 200   # absolute safety cap
 
+# ── Global scrape lock — prevents concurrent scrapes of the same URL ──────────
+# Maps url → asyncio.Lock so that identical concurrent requests are serialised.
+_scrape_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_lock(url: str) -> asyncio.Lock:
+    """Return (or create) a per-URL async lock."""
+    if url not in _scrape_locks:
+        _scrape_locks[url] = asyncio.Lock()
+    return _scrape_locks[url]
+
+
+# ──────────────────────────────────────────────
+# HTML EXTRACTORS
+# ──────────────────────────────────────────────
+
+def _extract_reviews_from_page(soup: BeautifulSoup) -> list[dict]:
+    """
+    Extract all review cards present on a single page.
+
+    Targets inside each div.review-card:
+        .text-content  → review body text
+        .review-date   → publication date
+        .profile-name / .username → reviewer name
+    """
+    reviews = []
+
+    for card in soup.select("div.review-card"):
+        text_el   = card.select_one(".text-content")
+        date_el   = card.select_one(".review-date")
+        author_el = card.select_one(".profile-name") or card.select_one(".username")
+
+        review_text = text_el.get_text(" ", strip=True) if text_el else None
+        if not review_text:
+            continue
+
+        reviews.append({
+            "content"   : review_text,
+            "date"      : date_el.get_text(strip=True) if date_el else "Unknown Date",
+            "author"    : author_el.get_text(strip=True) if author_el else "FemaleDaily User",
+            "isVerified": True,
+        })
+
+    return reviews
+
+
+def _extract_product_meta(soup: BeautifulSoup) -> tuple[str, str, str | None]:
+    """
+    Extract (product_name, product_brand, product_image) from page 1 HTML.
+    Returns safe defaults when elements are not found.
+    """
+    name_tag  = soup.select_one('[class*="product-name"]') or soup.find("h1")
+    brand_tag = soup.select_one('[class*="product-brand"]') or soup.select_one('[class*="brand-name"]')
+    img_tag   = soup.find("img", src=re.compile(r"image\.femaledaily\.com.*/prod-pics/"))
+
+    product_name  = name_tag.get_text(strip=True)  if name_tag  else "Unknown Product"
+    product_brand = brand_tag.get_text(strip=True) if brand_tag else "Unknown Brand"
+
+    product_image = None
+    if img_tag and img_tag.get("src"):
+        src = img_tag["src"]
+        product_image = ("https:" + src) if src.startswith("//") else src
+
+    return product_name, product_brand, product_image
+
+
+# ──────────────────────────────────────────────
+# MAIN SCRAPER
+# ──────────────────────────────────────────────
 
 def scrape_product_info(url: str) -> dict:
     """
-    Scrape info produk dari URL femaledaily.
-    Saat ini mengembalikan data mock untuk development.
-    Ganti implementasi ini setelah model real selesai.
+    Scrape product metadata and all paginated reviews from a Female Daily URL.
+
+    Safety guards:
+    - Stops after MAX_EMPTY_PAGES consecutive empty pages (not just the first).
+    - Hard-caps at MAX_PAGES to prevent infinite loops.
+    - REQUEST_DELAY between requests to avoid rate-limiting.
+
+    Returns:
+        {product_name, product_brand, product_image, product_url, reviews_raw}
     """
-    try:
-        # Coba scrape nama produk dari URL
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(response.text, "html.parser")
+    all_reviews:   list[dict] = []
+    product_name  = "Unknown Product"
+    product_brand = "Unknown Brand"
+    product_image = None
 
-        # Coba ambil nama produk (selector disesuaikan dengan struktur femaledaily)
-        name_tag = soup.find("h1", class_="product-name") or soup.find("h1")
-        product_name = name_tag.get_text(strip=True) if name_tag else "Unknown Product"
+    empty_streak = 0   # consecutive empty pages counter
 
-        brand_tag = soup.find("a", class_="brand-name") or soup.find("span", class_="brand")
-        product_brand = brand_tag.get_text(strip=True) if brand_tag else "Unknown Brand"
+    for page in range(1, MAX_PAGES + 1):
+        paged_url = f"{url}?page={page}"
+        print(f"[Scraper] Scraping {paged_url} ...")
 
-    except Exception:
-        # Fallback ke mock kalau scraping gagal
-        product_name  = "Product (Mock)"
-        product_brand = "Brand (Mock)"
+        try:
+            response = requests.get(paged_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+        except Exception as exc:
+            print(f"[Scraper] Failed to fetch page {page}: {exc}")
+            break
 
-    # Generate mock reviews
-    mock_reviews = []
-    sampled = random.sample(MOCK_REVIEW_POOL, min(10, len(MOCK_REVIEW_POOL)))
-    for i, (content, sentiment, aspect) in enumerate(sampled):
-        mock_reviews.append({
-            "id":         str(i + 1),
-            "author":     f"User{random.randint(100, 999)}",
-            "date":       "Mei 2026",
-            "content":    content,
-            "sentiment":  sentiment,
-            "aspect":     aspect,
-            "isVerified": random.choice([True, False]),
-        })
+        # Metadata — extracted once from the first page
+        if page == 1:
+            product_name, product_brand, product_image = _extract_product_meta(soup)
+
+        page_reviews = _extract_reviews_from_page(soup)
+
+        if not page_reviews:
+            empty_streak += 1
+            print(f"[Scraper] Page {page} is empty (streak={empty_streak}/{MAX_EMPTY_PAGES}).")
+            if empty_streak >= MAX_EMPTY_PAGES:
+                print("[Scraper] Reached max empty streak — stopping pagination.")
+                break
+        else:
+            empty_streak = 0   # reset streak on any successful page
+            all_reviews.extend(page_reviews)
+            print(f"[Scraper] Page {page}: {len(page_reviews)} reviews (total={len(all_reviews)})")
+
+        time.sleep(REQUEST_DELAY)
+
+    # Attach sequential IDs
+    for i, rev in enumerate(all_reviews):
+        rev["id"] = str(i + 1)
+
+    print(f"[Scraper] Done — {len(all_reviews)} reviews collected for '{product_name}'.")
 
     return {
-        "product_name":  product_name,
+        "product_name" : product_name,
         "product_brand": product_brand,
-        "product_url":   url,
-        "reviews_raw":   mock_reviews,  # nanti diganti hasil scraping real
+        "product_image": product_image,
+        "product_url"  : url,
+        "reviews_raw"  : all_reviews,
     }

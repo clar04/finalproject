@@ -99,9 +99,16 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
             <p className="px-4 py-3 text-xs text-text-muted">Mencari...</p>
           )}
           {!isSearching && isUrl && (
-            <p className="px-4 py-3 text-xs text-text-muted">
-              URL terdeteksi — klik <span className="font-semibold text-primary">Compare</span> untuk scrape produk ini.
-            </p>
+            <button
+              onClick={() => handleSelect({ _url: query, product_name: "Produk Baru (URL)", product_brand: "Klik Bandingkan untuk Scrape" })}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-background transition-colors text-left"
+            >
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-base">🌐</div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-primary truncate">Gunakan URL ini</p>
+                <p className="text-xs text-text-muted truncate">{query}</p>
+              </div>
+            </button>
           )}
           {!isSearching && !isUrl && results.length === 0 && query.trim() && (
             <p className="px-4 py-3 text-xs text-text-muted">
@@ -114,7 +121,9 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
               onClick={() => handleSelect(product)}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-background transition-colors text-left border-t border-border first:border-t-0"
             >
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-base">💄</div>
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-base overflow-hidden">
+                {product.product_image ? <img src={product.product_image} alt="" className="w-full h-full object-cover" /> : "💄"}
+              </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-text-main truncate">{product.product_name}</p>
                 <p className="text-xs text-text-muted">{product.product_brand}</p>
