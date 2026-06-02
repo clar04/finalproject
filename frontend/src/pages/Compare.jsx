@@ -1,42 +1,22 @@
 import { useState, useEffect } from 'react'
-import { GitCompare, Loader2, Clock, X } from 'lucide-react'
+import { GitCompare, Loader2, Clock, TrendingUp } from 'lucide-react'
 import Navbar from '../components/shared/Navbar'
 import ProductSelector from '../components/comparison/ProductSelector'
 import LoadingOverlay from '../components/comparison/LoadingOverlay'
 import NSSRadarChart from '../components/comparison/NSSRadarChart'
-import ReviewSnippets from '../components/comparison/ReviewSnippets'
 import { useCompare } from '../context/CompareContext'
-import { compareProducts, scrapeProduct } from '../services/api'
+import { compareProducts } from '../services/api'
 
-function ProductMiniCard({ product, onRemove }) {
-  if (!product) {
-    return (
-      <div className="flex-1 border border-dashed border-border rounded-2xl p-5 flex items-center justify-center min-h-[96px]">
-        <p className="text-sm text-text-muted">Pilih produk untuk dibandingkan</p>
-      </div>
-    )
-  }
-  return (
-    <div className="flex-1 bg-primary/5 border border-primary/30 rounded-2xl p-5 flex items-center gap-4">
-      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0 overflow-hidden">
-        {product.product_image ? <img src={product.product_image} alt="" className="w-full h-full object-cover" /> : "💄"}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-primary truncate">{product.product_brand}</p>
-        <p className="text-sm font-semibold text-text-main leading-snug line-clamp-2">{product.product_name}</p>
-        {product.overall_nss !== undefined && (
-          <p className={`text-xs font-medium mt-0.5 ${product.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-            NSS {product.overall_nss > 0 ? '+' : ''}{product.overall_nss}
-          </p>
-        )}
-      </div>
-      <button onClick={onRemove} className="text-text-muted hover:text-negative transition-colors shrink-0">
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  )
-}
+// ── Konstanta aspek ───────────────────────────────────────────
+const ASPECTS = [
+  { key: 'pigmentation', label: 'Pigmentasi' },
+  { key: 'longevity',    label: 'Ketahanan'  },
+  { key: 'texture',      label: 'Tekstur'    },
+  { key: 'hydration',    label: 'Hidrasi'    },
+  { key: 'price',        label: 'Harga'      },
+]
 
+// ── NSS Badge (ringkasan skor keseluruhan) ────────────────────
 function NSSBadge({ label, nss }) {
   const isPos = nss >= 0
   return (
@@ -50,6 +30,90 @@ function NSSBadge({ label, nss }) {
   )
 }
 
+// ── Tabel perbandingan NSS per aspek ─────────────────────────
+function NSSComparisonTable({ product1, product2 }) {
+  const name1 = product1.product_name
+  const name2 = product2.product_name
+
+  return (
+    <section className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
+      <h2 className="text-base font-semibold text-text-main mb-1">
+        Perbandingan NSS per Aspek
+      </h2>
+      <p className="text-xs text-text-muted mb-5">
+        NSS = (positif − negatif) / total × 100. Ikon{' '}
+        <TrendingUp className="w-3 h-3 inline text-positive" /> menandai produk yang unggul pada aspek tersebut.
+      </p>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left text-xs font-semibold text-text-muted pb-3 pr-6 w-1/3">
+                Aspek
+              </th>
+              <th className="text-center text-xs font-semibold text-text-muted pb-3 px-4 w-1/3 max-w-0">
+                <span className="block truncate">{name1}</span>
+              </th>
+              <th className="text-center text-xs font-semibold text-text-muted pb-3 pl-4 w-1/3 max-w-0">
+                <span className="block truncate">{name2}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {ASPECTS.map(({ key, label }) => {
+              const nss1 = product1.nss_scores?.[key]
+              const nss2 = product2.nss_scores?.[key]
+              const has1 = nss1 !== undefined && nss1 !== null
+              const has2 = nss2 !== undefined && nss2 !== null
+
+              // Tentukan pemenang per aspek
+              const winner = (has1 && has2)
+                ? (nss1 > nss2 ? 1 : nss2 > nss1 ? 2 : 0)
+                : 0
+
+              return (
+                <tr key={key}>
+                  <td className="py-3 pr-6 text-xs font-medium text-text-main">{label}</td>
+
+                  {/* Kolom produk 1 */}
+                  <td className="py-3 px-4 text-center">
+                    {has1 ? (
+                      <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
+                        winner === 1 ? 'font-bold' : ''
+                      } ${nss1 >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        {winner === 1 && <TrendingUp className="w-3 h-3 shrink-0" />}
+                        {nss1 > 0 ? '+' : ''}{nss1}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-text-muted">—</span>
+                    )}
+                  </td>
+
+                  {/* Kolom produk 2 */}
+                  <td className="py-3 pl-4 text-center">
+                    {has2 ? (
+                      <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
+                        winner === 2 ? 'font-bold' : ''
+                      } ${nss2 >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        {winner === 2 && <TrendingUp className="w-3 h-3 shrink-0" />}
+                        {nss2 > 0 ? '+' : ''}{nss2}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+// ── Halaman Compare ───────────────────────────────────────────
 export default function Compare() {
   const { compareList, clearCompare } = useCompare()
 
@@ -59,15 +123,19 @@ export default function Compare() {
   const [showResults, setShowResults] = useState(false)
   const [result, setResult]           = useState(null)
   const [processingTime, setProcessingTime] = useState(null)
-  const [error, setError] = useState(null)
+  const [error, setError]             = useState(null)
 
-  // Sync dari CompareContext (kalau datang dari Page 3)
+  // Sync dari CompareContext (kalau datang dari tombol "Tambah ke Compare" di halaman detail)
   useEffect(() => {
     if (compareList[0]) setProduct1(compareList[0])
     if (compareList[1]) setProduct2(compareList[1])
   }, [compareList])
 
-  const canCompare = product1 && product2 && !isLoading
+  // Kedua produk harus sudah ada di DB (punya _id) sebelum bisa dibandingkan
+  // Produk dari URL yang belum di-scrape tidak akan punya _id
+  const canCompare = !!(
+    product1?._id && product2?._id && !isLoading
+  )
 
   const handleCompare = async () => {
     if (!canCompare) return
@@ -76,26 +144,11 @@ export default function Compare() {
       setError(null)
       setIsLoading(true)
       const start = Date.now()
-
-      let p1_id = product1._id
-      let p2_id = product2._id
-
-      if (product1._url) {
-        const scraped1 = await scrapeProduct(product1._url)
-        p1_id = scraped1._id
-        setProduct1(scraped1)
-      }
-      if (product2._url) {
-        const scraped2 = await scrapeProduct(product2._url)
-        p2_id = scraped2._id
-        setProduct2(scraped2)
-      }
-
-      const data = await compareProducts(p1_id, p2_id)
+      const data = await compareProducts(product1._id, product2._id)
       setProcessingTime(((Date.now() - start) / 1000).toFixed(1))
       setResult(data)
     } catch (err) {
-      setError('Gagal melakukan komparasi. Pastikan backend berjalan atau URL valid.')
+      setError('Gagal melakukan komparasi. Pastikan backend berjalan.')
       console.error(err)
       setIsLoading(false)
     }
@@ -116,6 +169,20 @@ export default function Compare() {
     clearCompare()
   }
 
+  // Reset hasil saat produk diganti
+  const handleSelectProduct1 = (p) => {
+    setProduct1(p)
+    setShowResults(false)
+    setResult(null)
+    setError(null)
+  }
+  const handleSelectProduct2 = (p) => {
+    setProduct2(p)
+    setShowResults(false)
+    setResult(null)
+    setError(null)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -129,20 +196,25 @@ export default function Compare() {
           </div>
           <h1 className="text-2xl font-semibold text-text-main">Komparasi Produk</h1>
           <p className="text-sm text-text-muted mt-2 max-w-lg mx-auto">
-            Bandingkan dua produk bibir berdasarkan analisis sentimen ulasan Female Daily secara real-time
+            Bandingkan dua produk bibir berdasarkan analisis sentimen ulasan Female Daily.
+            Cari dari database atau paste URL untuk produk baru.
           </p>
         </div>
 
-        {/* Selectors */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <ProductSelector label="Produk Pertama" selectedProduct={product1} onSelect={setProduct1} excludeId={product2?._id} />
-          <ProductSelector label="Produk Kedua"   selectedProduct={product2} onSelect={setProduct2} excludeId={product1?._id} />
-        </div>
-
-        {/* Mini cards */}
-        <div className="flex gap-4 mb-6">
-          <ProductMiniCard product={product1} onRemove={() => setProduct1(null)} />
-          <ProductMiniCard product={product2} onRemove={() => setProduct2(null)} />
+        {/* Product Selectors */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <ProductSelector
+            label="Produk Pertama"
+            selectedProduct={product1}
+            onSelect={handleSelectProduct1}
+            excludeId={product2?._id}
+          />
+          <ProductSelector
+            label="Produk Kedua"
+            selectedProduct={product2}
+            onSelect={handleSelectProduct2}
+            excludeId={product1?._id}
+          />
         </div>
 
         {/* Action buttons */}
@@ -167,6 +239,16 @@ export default function Compare() {
           )}
         </div>
 
+        {/* Info: kenapa tombol bandingkan belum aktif */}
+        {(product1 || product2) && !canCompare && !isLoading && (
+          <p className="text-center text-xs text-text-muted mb-6">
+            {(!product1 || !product2)
+              ? 'Pilih dua produk untuk mulai membandingkan.'
+              : 'Scrape kedua produk terlebih dahulu agar bisa dibandingkan.'
+            }
+          </p>
+        )}
+
         {/* Error */}
         {error && (
           <div className="bg-negative/10 border border-negative/30 rounded-xl px-4 py-3 text-sm text-negative text-center mb-6">
@@ -174,7 +256,7 @@ export default function Compare() {
           </div>
         )}
 
-        {/* Loading */}
+        {/* Loading overlay */}
         <LoadingOverlay isLoading={isLoading} onComplete={handleLoadingComplete} />
 
         {/* Results */}
@@ -191,17 +273,17 @@ export default function Compare() {
               </div>
             )}
 
-            {/* NSS summary */}
+            {/* Overall NSS */}
             <div className="flex gap-4">
               <NSSBadge label={result.product1.product_name} nss={result.product1.overall_nss} />
               <NSSBadge label={result.product2.product_name} nss={result.product2.overall_nss} />
             </div>
 
-            {/* Radar */}
+            {/* Radar chart */}
             <NSSRadarChart product1={result.product1} product2={result.product2} />
 
-            {/* Review snippets */}
-            <ReviewSnippets product1={result.product1} product2={result.product2} />
+            {/* Tabel perbandingan per aspek */}
+            <NSSComparisonTable product1={result.product1} product2={result.product2} />
 
           </div>
         )}

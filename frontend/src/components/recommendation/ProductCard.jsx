@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, Flame, ArrowRight } from 'lucide-react'
+import { TrendingUp, ArrowRight } from 'lucide-react'
 
 // Helper: warna NSS score
 function getNSSColor(score) {
@@ -17,7 +17,7 @@ const ASPECT_LABELS = {
   price:        'Harga',
 }
 
-export default function ProductCard({ product, selectedFilters }) {
+export default function ProductCard({ product }) {
   const navigate = useNavigate()
 
   const {
@@ -25,24 +25,22 @@ export default function ProductCard({ product, selectedFilters }) {
     product_name,
     product_brand,
     product_price,
-    isTrending = false,
-    nss_scores = {},       // { pigmentation: 82, longevity: -10, ... }
+    nss_scores = {},
     overall_nss = 0,
     total_reviews = 0,
   } = product
 
-  // Aspek yang ditampilkan: kalau ada filter aktif, tampilkan yang difilter
-  // Kalau tidak ada filter, tampilkan 3 aspek pertama
-  const aspectsToShow = selectedFilters.length > 0
-    ? Object.entries(nss_scores).filter(([key]) => selectedFilters.includes(key))
-    : Object.entries(nss_scores).slice(0, 3)
+  // Selalu tampilkan top 3 aspek berdasarkan nilai absolut NSS (paling signifikan)
+  const aspectsToShow = Object.entries(nss_scores)
+    .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+    .slice(0, 3)
 
   return (
     <div
       onClick={() => navigate(`/product/${_id}`)}
       className="group bg-surface border border-border rounded-2xl p-5 cursor-pointer hover:border-primary/40 hover:shadow-md hover:shadow-primary/10 transition-all duration-200"
     >
-      {/* Header: nama + badge */}
+      {/* Header: nama + overall NSS */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           {product_brand && (
@@ -59,7 +57,6 @@ export default function ProductCard({ product, selectedFilters }) {
         </div>
 
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          {/* Trending badge di-hide sementara */}
           <span className={`flex items-center gap-1 text-sm font-bold ${getNSSColor(overall_nss)}`}>
             <TrendingUp className="w-3.5 h-3.5" />
             {overall_nss > 0 ? '+' : ''}{overall_nss}
@@ -70,14 +67,14 @@ export default function ProductCard({ product, selectedFilters }) {
       {/* Divider */}
       <div className="border-t border-border mb-4" />
 
-      {/* ABSA NSS bars per aspek */}
+      {/* Top 3 ABSA NSS bars */}
       <div className="space-y-3 mb-4">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">
           NSS per Aspek
         </p>
         {aspectsToShow.length > 0 ? (
           aspectsToShow.map(([key, score]) => {
-            // NSS range -100 to +100, normalize ke bar 0-100%
+            // Normalisasi NSS -100..+100 → bar 0..100%
             const barWidth = Math.max(0, Math.min(100, ((score + 100) / 200) * 100))
             const isPos = score >= 0
             return (

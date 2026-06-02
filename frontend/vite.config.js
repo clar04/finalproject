@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: '0.0.0.0',
+    allowedHosts: ['web.absa-labelstudio.my.id'],
+    host: true,
     port: 5173,
     watch: {
       usePolling: true,

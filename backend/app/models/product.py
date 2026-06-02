@@ -74,7 +74,8 @@ class ProductInDB(BaseModel):
 
 # ── Request schemas ───────────────────────────────────────────
 class ScrapeRequest(BaseModel):
-    url: str
+    url:  str
+    days: Optional[int] = None   # time-based filter: hanya ambil ulasan N hari terakhir
 
 class CompareRequest(BaseModel):
     id1: str

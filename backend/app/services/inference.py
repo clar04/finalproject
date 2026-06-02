@@ -268,6 +268,9 @@ def calculate_nss_and_breakdown(reviews: list[dict]) -> dict:
     Aggregate per-aspect NSS (Net Sentiment Score) and overall sentiment distribution.
 
     NSS = (positive - negative) / total  × 100  (rounded to int)
+
+    sentiment_distribution reflects unique reviews (majority-vote per review),
+    NOT the expanded aspect rows, so the pie chart total matches total_reviews.
     """
     aspect_names = [a.lower() for a in ASPECTS]
     absa_aspects = []
@@ -290,12 +293,27 @@ def calculate_nss_and_breakdown(reviews: list[dict]) -> dict:
         ))
         nss_scores[aspect] = nss
 
-    total_pos = sum(1 for r in reviews if r['sentiment'] == 'positive')
-    total_neg = sum(1 for r in reviews if r['sentiment'] == 'negative')
-    total_neu = sum(1 for r in reviews if r['sentiment'] == 'neutral')
-    total_all = len(reviews)
+    # ── Sentiment distribution: per unique review via majority vote ──────────
+    # Group all rows by review id, then pick the dominant sentiment.
+    review_sentiments: dict[str, dict[str, int]] = {}
+    for r in reviews:
+        rid = r.get('id', r.get('content', ''))   # fall back to content if no id
+        if rid not in review_sentiments:
+            review_sentiments[rid] = {'positive': 0, 'negative': 0, 'neutral': 0}
+        review_sentiments[rid][r['sentiment']] = review_sentiments[rid].get(r['sentiment'], 0) + 1
 
-    overall_nss = round(((total_pos - total_neg) / total_all) * 100) if total_all > 0 else 0
+    total_pos = total_neg = total_neu = 0
+    for counts in review_sentiments.values():
+        winner = max(counts, key=counts.get)
+        if winner == 'positive':
+            total_pos += 1
+        elif winner == 'negative':
+            total_neg += 1
+        else:
+            total_neu += 1
+
+    total_unique = total_pos + total_neg + total_neu
+    overall_nss = round(((total_pos - total_neg) / total_unique) * 100) if total_unique > 0 else 0
 
     return {
         'overall_nss'           : overall_nss,
@@ -305,3 +323,48 @@ def calculate_nss_and_breakdown(reviews: list[dict]) -> dict:
             positive=total_pos, negative=total_neg, neutral=total_neu
         ).model_dump(),
     }
+
+
+def group_reviews_by_id(reviews_labeled: list[dict]) -> list[dict]:
+    """
+    Collapse the ABSA-expanded review list back into one entry per unique review.
+
+    Each entry keeps the original review fields (content, date, author, id,
+    isVerified) and adds:
+        aspects   : list of {aspect, sentiment} dicts detected by the model
+        overall   : dominant sentiment across all detected aspects (majority vote)
+
+    This is used to drive the "Per Ulasan" tab in the frontend so users can
+    see each review once with all its aspect labels side-by-side.
+    """
+    from collections import defaultdict, Counter
+
+    grouped: dict[str, dict] = {}
+    order:   list[str]       = []   # preserve insertion order
+
+    for row in reviews_labeled:
+        rid = row.get('id', row.get('content', ''))
+        if rid not in grouped:
+            order.append(rid)
+            grouped[rid] = {
+                'id'        : row.get('id'),
+                'content'   : row.get('content'),
+                'date'      : row.get('date'),
+                'author'    : row.get('author'),
+                'isVerified': row.get('isVerified', False),
+                'aspects'   : [],
+            }
+        grouped[rid]['aspects'].append({
+            'aspect'   : row.get('aspect'),
+            'sentiment': row.get('sentiment'),
+        })
+
+    # Compute overall sentiment via majority vote and attach it
+    result = []
+    for rid in order:
+        entry = grouped[rid]
+        sentiments = [a['sentiment'] for a in entry['aspects']]
+        entry['overall'] = Counter(sentiments).most_common(1)[0][0] if sentiments else 'neutral'
+        result.append(entry)
+
+    return result

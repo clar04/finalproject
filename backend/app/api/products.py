@@ -2,9 +2,12 @@
 from fastapi import APIRouter, HTTPException
 from app.models.product import ScrapeRequest
 from app.services.scraper import scrape_product_info, _get_lock
+# pyrefly: ignore [missing-import]
 from fastapi.concurrency import run_in_threadpool
-from app.services.inference import run_inference, calculate_nss_and_breakdown
-from app.services.product_service import get_all_products, get_product_by_id, save_product, search_products
+from app.services.inference import run_inference, calculate_nss_and_breakdown, group_reviews_by_id
+from app.services.product_service import get_all_products, get_product_by_id, save_product, search_products, get_product_by_url
+from urllib.parse import urlparse
+
 
 # ── Router: general product endpoints ────────────────────────
 router = APIRouter(prefix="/api", tags=["products"])
@@ -42,9 +45,42 @@ async def scrape_and_analyze(body: ScrapeRequest):
     Scrape a product URL, run ABSA inference, compute NSS scores,
     persist to MongoDB, and return the full result.
 
-    A per-URL async lock prevents duplicate concurrent scrapes:
-    if the same URL is already being processed, a 409 is returned immediately.
+    Validations (before scraping):
+    - URL must come from reviews.femaledaily.com            [422]
+    - Product must not already exist in MongoDB             [409]
+
+    Concurrency guard:
+    - Per-URL async lock prevents duplicate concurrent scrapes [409]
     """
+    # ── 1. Validasi domain Female Daily ───────────────────────────────────────
+    try:
+        parsed = urlparse(body.url)
+        hostname = parsed.hostname or ""
+    except Exception:
+        hostname = ""
+
+    ALLOWED_DOMAINS = ("reviews.femaledaily.com", "femaledaily.com")
+    if not any(hostname == d or hostname.endswith("." + d) for d in ALLOWED_DOMAINS):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "URL tidak valid. Hanya link produk dari "
+                "reviews.femaledaily.com yang dapat dianalisis."
+            ),
+        )
+
+    # ── 2. Cek apakah produk sudah pernah di-scrape ───────────────────────────
+    existing = await get_product_by_url(body.url)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Produk ini sudah pernah dianalisis sebelumnya.",
+                "product_id": existing["_id"],
+            },
+        )
+
+    # ── 3. Concurrency lock ───────────────────────────────────────────────────
     lock = _get_lock(body.url)
     if lock.locked():
         raise HTTPException(
@@ -53,8 +89,9 @@ async def scrape_and_analyze(body: ScrapeRequest):
         )
 
     async with lock:
-        # 1. Scrape (berjalan di background thread agar tidak memblokir event loop)
-        raw = await run_in_threadpool(scrape_product_info, body.url)
+        # 1. Scrape — Playwright async, tidak memblokir event loop FastAPI
+        #    `days` meneruskan filter waktu dari request body (None = semua ulasan)
+        raw = await scrape_product_info(body.url, days=body.days)
 
         # 2. Inference (juga di background thread)
         reviews_labeled = await run_in_threadpool(run_inference, raw["reviews_raw"])
@@ -62,19 +99,23 @@ async def scrape_and_analyze(body: ScrapeRequest):
         # 3. Calculate NSS & breakdown
         analysis = calculate_nss_and_breakdown(reviews_labeled)
 
+        # 3b. Grouped reviews — satu entry per ulasan unik (untuk tab Per Ulasan)
+        reviews_grouped = group_reviews_by_id(reviews_labeled)
+
         # 4. Build document
         product_doc = {
             "product_name":           raw["product_name"],
             "product_brand":          raw["product_brand"],
             "product_image":          raw.get("product_image"),
             "product_url":            raw["product_url"],
-            "total_reviews":          len(reviews_labeled),
+            "total_reviews":          len(raw["reviews_raw"]),   # jumlah review unik (sebelum ABSA expansion)
             "overall_nss":            analysis["overall_nss"],
             "nss_scores":             analysis["nss_scores"],
             "absa_aspects":           analysis["absa_aspects"],
             "sentiment_distribution": analysis["sentiment_distribution"],
             "reviews":                reviews_labeled,
-            "isTrending":             len(reviews_labeled) > 1000,
+            "reviews_grouped":        reviews_grouped,   # satu entry per ulasan + list aspek
+            "isTrending":             len(raw["reviews_raw"]) > 1000,
         }
 
         # 5. Save / upsert to MongoDB

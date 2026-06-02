@@ -122,7 +122,7 @@ export default function ProductDetail() {
             {/* ABSA + Reviews — 2 col */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <ABSABreakdown aspects={product.absa_aspects} />
-              <ReviewTabs reviews={product.reviews} />
+              <ReviewTabs reviews={product.reviews} reviewsGrouped={product.reviews_grouped} />
             </div>
 
             {/* Footer */}

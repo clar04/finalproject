@@ -43,3 +43,12 @@ services:
 
 volumes:
   mongodb_data:
+
+cloudflared-uat:
+    image: cloudflare/cloudflared:latest
+    container_name: uat_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN_UAT}
+    depends_on:
+      - backend
+      - frontend

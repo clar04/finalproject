@@ -57,3 +57,10 @@ async def search_products(query: str) -> list[dict]:
     async for doc in cursor:
         results.append(_serialize(doc))
     return results
+
+
+async def get_product_by_url(url: str) -> dict | None:
+    """Return the stored product document for a given product_url, or None."""
+    db = get_database()
+    doc = await db["products"].find_one({"product_url": url}, {"reviews": 0})
+    return _serialize(doc) if doc else None
