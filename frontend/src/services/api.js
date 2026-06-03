@@ -4,7 +4,7 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 
 const api = axios.create({
     baseURL: BASE_URL,
-    timeout: 300000, // 5 menit (300 detik) — scraping & AI processing butuh waktu lama untuk ratusan review
+    timeout: 900000, // 15 menit — produk dengan review sangat banyak butuh waktu lama
 })
 
 // ─────────────────────────────────────────────
@@ -31,7 +31,6 @@ export const getAllProducts = async () => {
 
 /**
  * Ambil detail satu produk by MongoDB document ID
- * Backend akan cek cache dulu, kalau miss → scrape → infer → simpan
  * @param {string} id - MongoDB _id
  */
 export const getProductById = async (id) => {
@@ -41,7 +40,6 @@ export const getProductById = async (id) => {
 
 /**
  * Trigger scraping + inference untuk produk baru via URL
- * Dipakai di Navbar search (Page 3 entry point baru)
  * @param {string} url - URL femaledaily produk
  */
 export const scrapeProduct = async (url) => {
@@ -54,8 +52,7 @@ export const scrapeProduct = async (url) => {
 // ─────────────────────────────────────────────
 
 /**
- * Komparasi 2 produk — backend cek cache masing-masing,
- * scrape+infer kalau belum ada, lalu return hasil keduanya
+ * Komparasi 2 produk — backend cek cache masing-masing
  * @param {string} id1 - MongoDB _id produk pertama
  * @param {string} id2 - MongoDB _id produk kedua
  */
@@ -66,10 +63,71 @@ export const compareProducts = async (id1, id2) => {
 
 /**
  * Search produk dari database by nama atau brand
- * Dipakai di ProductSelector (Page 1)
  * @param {string} query - nama produk / brand
  */
 export const searchProducts = async (query) => {
     const res = await api.get('/api/products/search', { params: { q: query } })
     return res.data
+}
+
+// ─────────────────────────────────────────────
+// POLLING · Scrape Status
+// ─────────────────────────────────────────────
+
+/**
+ * Cek status scraping untuk URL tertentu (satu kali)
+ * @param {string} url - URL produk yang sedang di-scrape
+ * @returns {{ status: 'running'|'done'|'error'|'idle', product_id?: string, error?: string }}
+ */
+export const checkScrapeStatus = async (url) => {
+    const res = await api.get('/api/scrape/status', { params: { url } })
+    return res.data
+}
+
+/**
+ * Polling status scraping setiap intervalMs milidetik hingga done/error/dibatalkan.
+ *
+ * @param {string}   url         - URL produk
+ * @param {Function} onUpdate    - Callback dipanggil setiap tick: ({ status, product_id, error, elapsed })
+ * @param {AbortSignal} signal   - AbortSignal untuk membatalkan polling dari luar
+ * @param {number}   intervalMs  - Interval antar poll (default 5 detik)
+ * @returns {Promise<{ product_id: string }|null>} - product_id saat done, atau null saat dibatalkan
+ */
+export const pollScrapeStatus = async (url, onUpdate, signal, intervalMs = 5000) => {
+    const startTime = Date.now()
+
+    const wait = (ms) => new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, ms)
+        if (signal) {
+            signal.addEventListener('abort', () => {
+                clearTimeout(timeout)
+                reject(new DOMException('Polling dibatalkan', 'AbortError'))
+            }, { once: true })
+        }
+    })
+
+    while (true) {
+        if (signal?.aborted) return null
+
+        try {
+            const statusData = await checkScrapeStatus(url)
+            const elapsed = Math.floor((Date.now() - startTime) / 1000)
+
+            onUpdate({ ...statusData, elapsed })
+
+            if (statusData.status === 'done') {
+                return { product_id: statusData.product_id }
+            }
+
+            if (statusData.status === 'error') {
+                throw new Error(statusData.error || 'Terjadi kesalahan saat scraping.')
+            }
+
+            // status === 'running' atau 'idle' → tunggu lalu poll lagi
+            await wait(intervalMs)
+        } catch (err) {
+            if (err.name === 'AbortError') return null
+            throw err
+        }
+    }
 }

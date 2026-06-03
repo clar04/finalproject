@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { GitCompare, Sparkles, Link as LinkIcon, X, Loader2, Check } from 'lucide-react'
-import { useState } from 'react'
-import { scrapeProduct } from '../../services/api'
+import { GitCompare, Sparkles, Link as LinkIcon, X, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { scrapeProduct, pollScrapeStatus, getProductById } from '../../services/api'
 
 const NAV_LINKS = [
   { to: '/',        label: 'Rekomendasi' },
@@ -9,7 +9,7 @@ const NAV_LINKS = [
 ]
 
 const SCRAPE_STEPS = [
-  'Mengambil data produk...',
+  'Membuka halaman produk...',
   'Scraping ulasan Female Daily...',
   'Menjalankan analisis ABSA...',
   'Menghitung Net Sentiment Score...',
@@ -18,12 +18,102 @@ const SCRAPE_STEPS = [
 
 export default function Navbar() {
   const { pathname } = useLocation()
-  const navigate = useNavigate()
+  const navigate     = useNavigate()
 
-  const [url, setUrl]             = useState('')
+  const [url, setUrl]               = useState('')
   const [isScraping, setIsScraping] = useState(false)
-  const [stepIndex, setStepIndex] = useState(0)
-  const [error, setError]         = useState(null)
+  const [stepIndex, setStepIndex]   = useState(0)
+  const [error, setError]           = useState(null)
+
+  // State untuk polling mode
+  const [isPolling, setIsPolling]       = useState(false)
+  const [pollingElapsed, setPollingElapsed] = useState(0)
+  const [pollingUrl, setPollingUrl]     = useState('')   // URL yang sedang di-poll
+
+  const abortRef     = useRef(null)
+  const elapsedTimer = useRef(null)
+  const stepTimer    = useRef(null)
+
+  // Cleanup saat unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      clearInterval(elapsedTimer.current)
+      clearInterval(stepTimer.current)
+    }
+  }, [])
+
+  const formatElapsed = (secs) => {
+    if (secs < 60) return `${secs} detik`
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m} menit ${s} detik`
+  }
+
+  // Hitung indeks step berdasarkan elapsed time
+  const getPollingStepIndex = (elapsed) => {
+    if (elapsed < 15)  return 0
+    if (elapsed < 60)  return 1
+    if (elapsed < 180) return 2
+    if (elapsed < 270) return 3
+    return 4
+  }
+
+  const startPolling = useCallback(async (targetUrl) => {
+    // Reset state scraping biasa, masuk mode polling
+    setIsScraping(false)
+    clearInterval(stepTimer.current)
+    setIsPolling(true)
+    setPollingUrl(targetUrl)
+    setPollingElapsed(0)
+
+    // Timer elapsed
+    clearInterval(elapsedTimer.current)
+    elapsedTimer.current = setInterval(() => {
+      setPollingElapsed(prev => prev + 1)
+    }, 1000)
+
+    abortRef.current = new AbortController()
+
+    try {
+      const result = await pollScrapeStatus(
+        targetUrl,
+        () => {},  // elapsed dihandle oleh interval timer
+        abortRef.current.signal,
+        5000,
+      )
+
+      clearInterval(elapsedTimer.current)
+      setIsPolling(false)
+      setPollingUrl('')
+
+      if (!result) {
+        // Dibatalkan user
+        return
+      }
+
+      // Selesai — navigasi ke halaman produk
+      const product = await getProductById(result.product_id)
+      setUrl('')
+      navigate(`/product/${product._id}`)
+    } catch (err) {
+      clearInterval(elapsedTimer.current)
+      setIsPolling(false)
+      setPollingUrl('')
+      if (err.name !== 'AbortError') {
+        setError('Gagal memantau scraping. Coba lagi beberapa saat.')
+        console.error(err)
+      }
+    }
+  }, [navigate])
+
+  const handleCancelPolling = () => {
+    abortRef.current?.abort()
+    clearInterval(elapsedTimer.current)
+    setIsPolling(false)
+    setPollingUrl('')
+    setError('Pemantauan dihentikan. Paste URL yang sama untuk melanjutkan.')
+  }
 
   const handleScrape = async (e) => {
     e.preventDefault()
@@ -35,36 +125,40 @@ export default function Navbar() {
       setError(null)
       setStepIndex(0)
 
-      // Animasi langkah-langkah (kosmetik saja — proses nyata berjalan paralel)
-      const stepTimer = setInterval(() => {
+      // Animasi langkah-langkah (kosmetik — proses nyata berjalan paralel)
+      stepTimer.current = setInterval(() => {
         setStepIndex(prev => (prev < SCRAPE_STEPS.length - 1 ? prev + 1 : prev))
       }, 1800)
 
       const product = await scrapeProduct(trimmed)
-      clearInterval(stepTimer)
+      clearInterval(stepTimer.current)
 
       setUrl('')
       setIsScraping(false)
       navigate(`/product/${product._id}`)
     } catch (err) {
+      clearInterval(stepTimer.current)
       setIsScraping(false)
 
       const status = err?.response?.status
       const detail = err?.response?.data?.detail
 
       if (status === 422) {
-        // URL bukan dari Female Daily
         setError(
           typeof detail === 'string'
             ? detail
-            : 'URL tidak valid. Hanya link dari reviews.femaledaily.com yang bisa dianalisis.'
+            : 'URL tidak valid. Hanya link lip product dari reviews.femaledaily.com.'
         )
       } else if (status === 409 && detail?.product_id) {
-        // Produk sudah ada — redirect ke halaman produk yang sudah tersimpan
+        // Produk sudah ada — redirect langsung
         setUrl('')
         navigate(`/product/${detail.product_id}`)
       } else if (status === 409) {
-        setError('Scraping sedang berjalan untuk URL ini. Harap tunggu.')
+        // Scraping sedang berjalan → masuk mode polling dengan modal
+        startPolling(trimmed)
+      } else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        // Timeout → switch ke polling
+        startPolling(trimmed)
       } else {
         setError('Gagal menganalisis URL. Pastikan URL berasal dari Female Daily.')
       }
@@ -74,6 +168,9 @@ export default function Navbar() {
   }
 
   const isValidUrl = url.trim().startsWith('http')
+
+  // Step index untuk polling modal (berdasarkan elapsed)
+  const pollingStep = getPollingStepIndex(pollingElapsed)
 
   return (
     <>
@@ -100,8 +197,8 @@ export default function Navbar() {
                     type="text"
                     value={url}
                     onChange={e => { setUrl(e.target.value); setError(null) }}
-                    placeholder="Paste URL produk Female Daily untuk analisis..."
-                    disabled={isScraping}
+                    placeholder="Paste URL lip product Female Daily untuk analisis..."
+                    disabled={isScraping || isPolling}
                     className={`w-full h-9 pl-9 pr-8 text-xs border rounded-xl text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all disabled:opacity-60 ${
                       error
                         ? 'border-negative/60 bg-negative/5'
@@ -110,7 +207,7 @@ export default function Navbar() {
                           : 'border-border bg-background'
                     }`}
                   />
-                  {url && !isScraping && (
+                  {url && !isScraping && !isPolling && (
                     <button
                       type="button"
                       onClick={() => { setUrl(''); setError(null) }}
@@ -122,18 +219,21 @@ export default function Navbar() {
                 </div>
                 <button
                   type="submit"
-                  disabled={!isValidUrl || isScraping}
+                  disabled={!isValidUrl || isScraping || isPolling}
                   className="flex items-center gap-1.5 px-3 h-9 bg-primary text-white text-xs font-medium rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-all shrink-0"
                 >
-                  {isScraping
+                  {isScraping || isPolling
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     : null
                   }
-                  {isScraping ? 'Menganalisis...' : 'Analisis'}
+                  {isScraping ? 'Menganalisis...' : isPolling ? 'Memantau...' : 'Analisis'}
                 </button>
               </div>
               {error && (
-                <p className="text-[10px] text-negative pl-9 leading-tight">{error}</p>
+                <div className="flex items-center gap-1.5 pl-9">
+                  <AlertCircle className="w-3 h-3 text-negative shrink-0" />
+                  <p className="text-[10px] text-negative leading-tight">{error}</p>
+                </div>
               )}
             </div>
           </form>
@@ -162,12 +262,11 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* Fullscreen loading modal saat scraping */}
+      {/* ── Fullscreen modal: scraping biasa ── */}
       {isScraping && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface border border-border rounded-2xl p-8 w-full max-w-sm flex flex-col items-center gap-6 shadow-2xl">
 
-            {/* Spinner */}
             <div className="relative w-14 h-14">
               <div className="absolute inset-0 rounded-full border-4 border-border" />
               <Loader2 className="absolute inset-0 w-14 h-14 text-primary animate-spin" />
@@ -175,12 +274,9 @@ export default function Navbar() {
 
             <div className="text-center">
               <p className="text-sm font-semibold text-text-main mb-1">Menganalisis Produk</p>
-              <p className="text-xs text-text-muted">
-                Proses ini dapat memakan waktu 1–3 menit
-              </p>
+              <p className="text-xs text-text-muted">Proses ini dapat memakan waktu beberapa menit</p>
             </div>
 
-            {/* Step list */}
             <div className="w-full space-y-2.5">
               {SCRAPE_STEPS.map((step, idx) => (
                 <div key={idx} className="flex items-center gap-3">
@@ -207,10 +303,86 @@ export default function Navbar() {
               ))}
             </div>
 
-            {/* URL yang sedang diproses */}
             <div className="w-full px-3 py-2 bg-background rounded-lg border border-border">
               <p className="text-[10px] text-text-muted truncate">{url}</p>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Fullscreen modal: polling mode (saat timeout / 409 sedang berjalan) ── */}
+      {isPolling && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface border border-primary/20 rounded-2xl p-8 w-full max-w-sm flex flex-col items-center gap-6 shadow-2xl">
+
+            {/* Header */}
+            <div className="text-center">
+              <div className="relative w-14 h-14 mx-auto mb-4">
+                <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
+                <RefreshCw className="absolute inset-0 w-14 h-14 text-primary animate-spin" style={{ animationDuration: '2s' }} />
+              </div>
+              <p className="text-sm font-semibold text-text-main mb-1">Scraping Masih Berjalan</p>
+              <p className="text-xs text-text-muted">
+                Proses di server masih aktif. Memantau hasil setiap 5 detik...
+              </p>
+            </div>
+
+            {/* Elapsed */}
+            <div className="w-full px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-xl text-center">
+              <p className="text-[10px] text-text-muted mb-0.5">Berjalan selama</p>
+              <p className="text-base font-semibold text-primary">{formatElapsed(pollingElapsed)}</p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full">
+              <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-1000"
+                  style={{ width: `${Math.min(95, (pollingElapsed / 300) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Step list */}
+            <div className="w-full space-y-2.5">
+              {SCRAPE_STEPS.map((step, idx) => (
+                <div key={idx} className="flex items-center gap-3">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all ${
+                    idx < pollingStep
+                      ? 'bg-positive text-white'
+                      : idx === pollingStep
+                        ? 'bg-primary text-white'
+                        : 'bg-border'
+                  }`}>
+                    {idx < pollingStep
+                      ? <Check className="w-3 h-3" />
+                      : idx === pollingStep
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : null
+                    }
+                  </div>
+                  <span className={`text-xs transition-colors ${
+                    idx <= pollingStep ? 'text-text-main font-medium' : 'text-text-muted'
+                  }`}>
+                    {step}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* URL */}
+            <div className="w-full px-3 py-2 bg-background rounded-lg border border-border">
+              <p className="text-[10px] text-text-muted truncate">{pollingUrl}</p>
+            </div>
+
+            {/* Tombol batalkan */}
+            <button
+              onClick={handleCancelPolling}
+              className="text-xs text-text-muted hover:text-negative transition-colors underline underline-offset-2"
+            >
+              Hentikan pemantauan
+            </button>
 
           </div>
         </div>

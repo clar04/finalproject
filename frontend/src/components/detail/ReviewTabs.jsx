@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { MessageSquare, ThumbsUp, ThumbsDown, Minus, User, BadgeCheck, Layers } from 'lucide-react'
+import { MessageSquare, ThumbsUp, ThumbsDown, Minus, User, Layers } from 'lucide-react'
 
 const ASPECT_LABELS = {
   all:          'Semua',
@@ -45,15 +45,7 @@ function AspectReviewCard({ review }) {
             <User className="w-3.5 h-3.5 text-text-muted" />
           </div>
           <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-semibold text-text-main">{review.author}</span>
-              {review.isVerified && (
-                <span className="flex items-center gap-0.5 text-[10px] text-primary">
-                  <BadgeCheck className="w-3 h-3" />
-                  Verified
-                </span>
-              )}
-            </div>
+            <span className="text-xs font-semibold text-text-main">{review.author}</span>
             <p className="text-[10px] text-text-muted">{review.date}</p>
           </div>
         </div>
@@ -76,7 +68,7 @@ function AspectReviewCard({ review }) {
   )
 }
 
-// ── Komponen kartu untuk tab Per Ulasan ───────────────────────────────────────
+// ── Komponen kartu untuk tab Per Ulasan (dipakai dalam carousel) ───────────────
 function GroupedReviewCard({ review }) {
   const overallConfig = SENTIMENT_CONFIG[review.overall] || SENTIMENT_CONFIG.neutral
   const OverallIcon   = overallConfig.icon
@@ -90,15 +82,7 @@ function GroupedReviewCard({ review }) {
             <User className="w-3.5 h-3.5 text-text-muted" />
           </div>
           <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-semibold text-text-main">{review.author}</span>
-              {review.isVerified && (
-                <span className="flex items-center gap-0.5 text-[10px] text-primary">
-                  <BadgeCheck className="w-3 h-3" />
-                  Verified
-                </span>
-              )}
-            </div>
+            <span className="text-xs font-semibold text-text-main">{review.author}</span>
             <p className="text-[10px] text-text-muted">{review.date}</p>
           </div>
         </div>
@@ -113,7 +97,7 @@ function GroupedReviewCard({ review }) {
       {/* Review text */}
       <p className="text-xs text-text-main leading-relaxed mb-3">{review.content}</p>
 
-      {/* Aspect + sentiment badges — satu baris per aspek yang terdeteksi */}
+      {/* Aspect + sentiment badges */}
       <div className="flex flex-wrap gap-1.5">
         {review.aspects.map((asp, i) => {
           const cfg  = SENTIMENT_CONFIG[asp.sentiment] || SENTIMENT_CONFIG.neutral

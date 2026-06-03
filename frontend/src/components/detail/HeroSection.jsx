@@ -1,4 +1,4 @@
-import { Star, MessageSquare, TrendingUp, ShieldCheck, Timer, GitCompare } from 'lucide-react'
+import { Star, MessageSquare, TrendingUp, ShieldCheck, Timer, GitCompare, Palette } from 'lucide-react'
 import { useCompare } from '../../context/CompareContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -10,6 +10,7 @@ export default function HeroSection({ product, analysisTime }) {
     _id,
     product_name,
     product_brand,
+    product_shade,
     product_price,
     rating,
     total_reviews = 0,
@@ -77,6 +78,12 @@ export default function HeroSection({ product, analysisTime }) {
           <h1 className="text-2xl lg:text-3xl font-semibold text-text-main leading-snug">
             {product_name}
           </h1>
+          {product_shade && (
+            <span className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg bg-surface border border-border text-xs text-text-muted">
+              <Palette className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="font-medium">{product_shade}</span>
+            </span>
+          )}
           {product_price && (
             <p className="text-xl font-semibold text-text-main mt-2">
               Rp {Number(product_price).toLocaleString('id-ID')}

@@ -57,6 +57,7 @@ class ProductInDB(BaseModel):
     product_name:           str
     product_brand:          Optional[str] = None
     product_image:          Optional[str] = None
+    product_shade:          Optional[str] = None
     product_price:          Optional[float] = None
     product_url:            Optional[str] = None
     rating:                 Optional[float] = None

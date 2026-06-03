@@ -31,8 +31,8 @@ USER_AGENT = (
 REQUEST_DELAY   = 0.5   # seconds between page requests
 JS_WAIT_MS      = 3000  # milliseconds to wait for JS hydration after page load
 MAX_RETRIES     = 3     # max retry attempts per page before giving up
-MAX_EMPTY_PAGES = 2     # stop after N consecutive empty pages
-MAX_PAGES       = 200   # absolute safety cap on pagination
+MAX_EMPTY_PAGES = 5     # stop after N consecutive empty pages (dinaikkan agar lebih toleran)
+MAX_PAGES       = 400   # absolute safety cap: 10 review/page × 400 = 4000 review
 
 # Nama bulan Indonesia → angka
 _ID_MONTHS = {
@@ -296,24 +296,29 @@ def _extract_reviews_from_page(
     return reviews, stop_early
 
 
-def _extract_product_meta(soup: BeautifulSoup) -> tuple[str, str, str | None]:
+def _extract_product_meta(soup: BeautifulSoup) -> tuple[str, str, str | None, str | None]:
     """
-    Extract (product_name, product_brand, product_image) from page 1 HTML.
+    Extract (product_name, product_brand, product_image, product_shade) from page 1 HTML.
     Returns safe defaults when elements are not found.
     """
     name_tag  = soup.select_one('[class*="product-name"]') or soup.find("h1")
     brand_tag = soup.select_one('[class*="product-brand"]') or soup.select_one('[class*="brand-name"]')
     img_tag   = soup.find("img", src=re.compile(r"image\.femaledaily\.com.*/prod-pics/"))
 
+    # Shade: cari elemen dengan class yang mengandung "product-shade"
+    shade_tag = soup.select_one('[class*="product-shade"]')
+
     product_name  = name_tag.get_text(strip=True)  if name_tag  else "Unknown Product"
     product_brand = brand_tag.get_text(strip=True) if brand_tag else "Unknown Brand"
+    product_shade = shade_tag.get_text(strip=True) if shade_tag else None
 
     product_image = None
     if img_tag and img_tag.get("src"):
         src = img_tag["src"]
         product_image = ("https:" + src) if src.startswith("//") else src
 
-    return product_name, product_brand, product_image
+    print(f"[Scraper] Shade: {product_shade!r}")
+    return product_name, product_brand, product_image, product_shade
 
 
 # ──────────────────────────────────────────────
@@ -351,6 +356,7 @@ async def scrape_product_info(url: str, days: int | None = None) -> dict:
     product_name  = "Unknown Product"
     product_brand = "Unknown Brand"
     product_image = None
+    product_shade = None
     empty_streak  = 0
     seen_hashes:  set = set()   # dedup guard across all pages
 
@@ -372,7 +378,7 @@ async def scrape_product_info(url: str, days: int | None = None) -> dict:
 
                 # Metadata — extracted once from the first page
                 if page_num == 1:
-                    product_name, product_brand, product_image = _extract_product_meta(soup)
+                    product_name, product_brand, product_image, product_shade = _extract_product_meta(soup)
                     print(f"[Scraper] Product: {product_brand} – {product_name}")
 
                 page_reviews, stop_early = _extract_reviews_from_page(
@@ -421,6 +427,7 @@ async def scrape_product_info(url: str, days: int | None = None) -> dict:
         "product_name" : product_name,
         "product_brand": product_brand,
         "product_image": product_image,
+        "product_shade": product_shade,
         "product_url"  : url,
         "reviews_raw"  : all_reviews,
     }

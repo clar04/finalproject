@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, ArrowRight } from 'lucide-react'
+import { TrendingUp, ArrowRight, Palette } from 'lucide-react'
 
 // Helper: warna NSS score
 function getNSSColor(score) {
@@ -24,6 +24,7 @@ export default function ProductCard({ product }) {
     _id,
     product_name,
     product_brand,
+    product_shade,
     product_price,
     nss_scores = {},
     overall_nss = 0,
@@ -51,6 +52,12 @@ export default function ProductCard({ product }) {
           <h3 className="text-sm font-semibold text-text-main leading-snug line-clamp-2">
             {product_name}
           </h3>
+          {product_shade && (
+            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-md bg-background border border-border text-[10px] text-text-muted">
+              <Palette className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate max-w-[120px]">{product_shade}</span>
+            </span>
+          )}
           {product_price && (
             <p className="text-xs text-text-muted mt-1">Rp {Number(product_price).toLocaleString('id-ID')}</p>
           )}

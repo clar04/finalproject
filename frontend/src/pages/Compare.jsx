@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { GitCompare, Loader2, Clock, TrendingUp } from 'lucide-react'
+import { GitCompare, Loader2, Clock, TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react'
 import Navbar from '../components/shared/Navbar'
 import ProductSelector from '../components/comparison/ProductSelector'
 import LoadingOverlay from '../components/comparison/LoadingOverlay'
@@ -67,7 +67,6 @@ function NSSComparisonTable({ product1, product2 }) {
               const has1 = nss1 !== undefined && nss1 !== null
               const has2 = nss2 !== undefined && nss2 !== null
 
-              // Tentukan pemenang per aspek
               const winner = (has1 && has2)
                 ? (nss1 > nss2 ? 1 : nss2 > nss1 ? 2 : 0)
                 : 0
@@ -76,7 +75,6 @@ function NSSComparisonTable({ product1, product2 }) {
                 <tr key={key}>
                   <td className="py-3 pr-6 text-xs font-medium text-text-main">{label}</td>
 
-                  {/* Kolom produk 1 */}
                   <td className="py-3 px-4 text-center">
                     {has1 ? (
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
@@ -90,7 +88,6 @@ function NSSComparisonTable({ product1, product2 }) {
                     )}
                   </td>
 
-                  {/* Kolom produk 2 */}
                   <td className="py-3 pl-4 text-center">
                     {has2 ? (
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
@@ -113,6 +110,59 @@ function NSSComparisonTable({ product1, product2 }) {
   )
 }
 
+// ── Banner: status kesiapan produk ────────────────────────────
+function ProductReadinessBanner({ product1, product2 }) {
+  const p1Ready = !!product1?._id
+  const p2Ready = !!product2?._id
+
+  // Tidak perlu banner kalau keduanya belum ada, atau keduanya sudah siap
+  if ((!product1 && !product2) || (p1Ready && p2Ready)) return null
+  // Kalau keduanya ada tapi keduanya belum punya _id, jangan tampilkan
+  if (product1 && product2 && !p1Ready && !p2Ready) return null
+
+  const readyName  = p1Ready ? product1.product_name : product2?.product_name
+  const waitLabel  = !p1Ready && product1 ? 'Produk Pertama' : 'Produk Kedua'
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl mb-4">
+      <div className="flex flex-col gap-1.5 flex-1">
+        {p1Ready && product1 && (
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-positive shrink-0" />
+            <span className="text-xs text-text-main">
+              <span className="font-semibold">{product1.product_name}</span> sudah siap dianalisis
+            </span>
+          </div>
+        )}
+        {p2Ready && product2 && (
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-positive shrink-0" />
+            <span className="text-xs text-text-main">
+              <span className="font-semibold">{product2.product_name}</span> sudah siap dianalisis
+            </span>
+          </div>
+        )}
+        {(product1 && !p1Ready) && (
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-primary shrink-0 animate-pulse" />
+            <span className="text-xs text-text-muted">
+              Menunggu <span className="font-semibold">Produk Pertama</span> selesai diproses...
+            </span>
+          </div>
+        )}
+        {(product2 && !p2Ready) && (
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-primary shrink-0 animate-pulse" />
+            <span className="text-xs text-text-muted">
+              Menunggu <span className="font-semibold">Produk Kedua</span> selesai diproses...
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Halaman Compare ───────────────────────────────────────────
 export default function Compare() {
   const { compareList, clearCompare } = useCompare()
@@ -132,7 +182,6 @@ export default function Compare() {
   }, [compareList])
 
   // Kedua produk harus sudah ada di DB (punya _id) sebelum bisa dibandingkan
-  // Produk dari URL yang belum di-scrape tidak akan punya _id
   const canCompare = !!(
     product1?._id && product2?._id && !isLoading
   )
@@ -142,6 +191,7 @@ export default function Compare() {
     try {
       setShowResults(false)
       setError(null)
+      setResult(null)
       setIsLoading(true)
       const start = Date.now()
       const data = await compareProducts(product1._id, product2._id)
@@ -202,7 +252,7 @@ export default function Compare() {
         </div>
 
         {/* Product Selectors */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <ProductSelector
             label="Produk Pertama"
             selectedProduct={product1}
@@ -217,8 +267,13 @@ export default function Compare() {
           />
         </div>
 
+        {/* Banner status kesiapan produk (Poin 6) */}
+        {!isLoading && !showResults && (product1 || product2) && (
+          <ProductReadinessBanner product1={product1} product2={product2} />
+        )}
+
         {/* Action buttons */}
-        <div className="flex justify-center gap-3 mb-8">
+        <div className="flex justify-center gap-3 mb-6">
           <button
             onClick={handleCompare}
             disabled={!canCompare}
@@ -251,13 +306,18 @@ export default function Compare() {
 
         {/* Error */}
         {error && (
-          <div className="bg-negative/10 border border-negative/30 rounded-xl px-4 py-3 text-sm text-negative text-center mb-6">
-            {error}
+          <div className="flex items-start gap-3 bg-negative/8 border border-negative/25 rounded-xl px-4 py-3 mb-6">
+            <AlertCircle className="w-4 h-4 text-negative shrink-0 mt-0.5" />
+            <p className="text-sm text-negative">{error}</p>
           </div>
         )}
 
-        {/* Loading overlay */}
-        <LoadingOverlay isLoading={isLoading} onComplete={handleLoadingComplete} />
+        {/* Loading overlay — diberi hasResult agar tidak hilang sebelum data ada */}
+        <LoadingOverlay
+          isLoading={isLoading}
+          hasResult={result !== null}
+          onComplete={handleLoadingComplete}
+        />
 
         {/* Results */}
         {showResults && result && (

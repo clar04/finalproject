@@ -1,18 +1,26 @@
-import { useState, useRef, useEffect } from 'react'
-import { Search, Link, ChevronDown, X, Loader2, Sparkles } from 'lucide-react'
-import { searchProducts, scrapeProduct } from '../../services/api'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Search, Link, ChevronDown, X, Loader2, Sparkles, Palette } from 'lucide-react'
+import { searchProducts, scrapeProduct, pollScrapeStatus, getProductById } from '../../services/api'
+import ScrapePollingOverlay, { ErrorBanner } from './ScrapePollingOverlay'
 
 export default function ProductSelector({ label, selectedProduct, onSelect, excludeId }) {
   const [query, setQuery]             = useState('')
   const [results, setResults]         = useState([])
   const [isOpen, setIsOpen]           = useState(false)
   const [isSearching, setIsSearching] = useState(false)
-  const [isScraping, setIsScraping]   = useState(false)
-  const [scrapeError, setScrapeError] = useState(null)
-  const wrapperRef = useRef(null)
 
-  // Kalkulasi sebelum efek agar bisa dipakai di dalam callback
-  const isUrl = query.trim().startsWith('http')
+  // State scraping
+  const [scrapePhase, setScrapePhase] = useState(null)
+  // null = idle | 'requesting' = menunggu POST | 'polling' = menunggu status
+  const [pollingElapsed, setPollingElapsed] = useState(0)
+  const [scrapeError, setScrapeError] = useState(null)
+
+  const wrapperRef   = useRef(null)
+  const abortRef     = useRef(null)   // AbortController untuk polling
+  const elapsedTimer = useRef(null)   // setInterval timer elapsed
+
+  const isUrl      = query.trim().startsWith('http')
+  const isScraping = scrapePhase !== null
 
   // Tutup dropdown kalau klik di luar
   useEffect(() => {
@@ -46,12 +54,33 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
     return () => clearTimeout(timer)
   }, [query, excludeId])
 
+  // Cleanup saat unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      clearInterval(elapsedTimer.current)
+    }
+  }, [])
+
+  const startElapsedTimer = useCallback(() => {
+    setPollingElapsed(0)
+    clearInterval(elapsedTimer.current)
+    elapsedTimer.current = setInterval(() => {
+      setPollingElapsed(prev => prev + 1)
+    }, 1000)
+  }, [])
+
+  const stopElapsedTimer = useCallback(() => {
+    clearInterval(elapsedTimer.current)
+  }, [])
+
   const handleSelect = (product) => {
     onSelect(product)
     setQuery('')
     setResults([])
     setIsOpen(false)
     setScrapeError(null)
+    setScrapePhase(null)
   }
 
   const handleClear = () => {
@@ -59,44 +88,110 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
     setQuery('')
     setResults([])
     setScrapeError(null)
+    setScrapePhase(null)
+    abortRef.current?.abort()
+    stopElapsedTimer()
   }
+
+  // Mulai polling (dipanggil saat POST timeout atau dapat 409 "sedang berjalan")
+  const startPolling = useCallback(async (url) => {
+    setScrapePhase('polling')
+    startElapsedTimer()
+
+    abortRef.current = new AbortController()
+
+    try {
+      const result = await pollScrapeStatus(
+        url,
+        (statusData) => {
+          setPollingElapsed(Math.floor((Date.now() - Date.now()) / 1000)) // dihandle oleh interval
+        },
+        abortRef.current.signal,
+        5000,
+      )
+
+      if (!result) {
+        // Dibatalkan oleh user
+        setScrapePhase(null)
+        stopElapsedTimer()
+        return
+      }
+
+      // Polling selesai — fetch produk
+      const product = await getProductById(result.product_id)
+      stopElapsedTimer()
+      handleSelect(product)
+    } catch (err) {
+      stopElapsedTimer()
+      setScrapePhase(null)
+      setScrapeError(err.message || 'Terjadi kesalahan saat menunggu hasil scraping.')
+      console.error(err)
+    }
+  }, [startElapsedTimer, stopElapsedTimer]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scraping per-slot: dipanggil saat tombol "Scrape" diklik
   const handleScrape = async () => {
     if (!isUrl || isScraping) return
+    const url = query.trim()
+
     try {
-      setIsScraping(true)
+      setScrapePhase('requesting')
       setScrapeError(null)
-      const product = await scrapeProduct(query.trim())
+      const product = await scrapeProduct(url)
+      setScrapePhase(null)
       handleSelect(product)
     } catch (err) {
       const status = err?.response?.status
       const detail = err?.response?.data?.detail
 
+      // Produk sudah ada di DB
+      if (status === 409 && detail?.product_id) {
+        setScrapePhase(null)
+        try {
+          const existing = await getProductById(detail.product_id)
+          handleSelect(existing)
+        } catch {
+          setScrapePhase(null)
+          setScrapeError('Produk sudah dianalisis sebelumnya, tapi gagal memuat datanya.')
+        }
+        return
+      }
+
+      // Scraping sedang berjalan di server → switch ke polling
+      if (status === 409) {
+        setScrapeError(null)
+        startPolling(url)
+        return
+      }
+
+      // Timeout Axios → switch ke polling (server masih berjalan)
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        setScrapeError(null)
+        startPolling(url)
+        return
+      }
+
+      // Error lainnya (422, network error, dll)
+      setScrapePhase(null)
       if (status === 422) {
         setScrapeError(
           typeof detail === 'string'
             ? detail
-            : 'URL tidak valid. Hanya link dari reviews.femaledaily.com.'
+            : 'URL tidak valid. Hanya link lip product dari reviews.femaledaily.com.'
         )
-      } else if (status === 409 && detail?.product_id) {
-        // Produk sudah ada di DB — fetch dan langsung pilih
-        try {
-          const { getProductById } = await import('../../services/api')
-          const existing = await getProductById(detail.product_id)
-          handleSelect(existing)
-        } catch {
-          setScrapeError('Produk sudah dianalisis sebelumnya, tapi gagal memuat datanya.')
-        }
-      } else if (status === 409) {
-        setScrapeError('Scraping sedang berjalan untuk URL ini. Harap tunggu.')
       } else {
         setScrapeError('Gagal scraping. Periksa URL dan coba lagi.')
       }
       console.error(err)
-    } finally {
-      setIsScraping(false)
     }
+  }
+
+  // Batalkan polling (scraping tetap jalan di server)
+  const handleCancelPolling = () => {
+    abortRef.current?.abort()
+    stopElapsedTimer()
+    setScrapePhase(null)
+    setScrapeError('Polling dihentikan. Kamu bisa paste URL yang sama lagi nanti untuk melanjutkan.')
   }
 
   // ── Tampilan saat produk sudah terpilih ─────────────────────
@@ -117,6 +212,13 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
             <p className="text-sm font-semibold text-text-main leading-snug line-clamp-1">
               {selectedProduct.product_name}
             </p>
+            {/* Shade badge */}
+            {selectedProduct.product_shade && (
+              <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-md bg-surface border border-border text-[10px] text-text-muted">
+                <Palette className="w-2.5 h-2.5" />
+                {selectedProduct.product_shade}
+              </span>
+            )}
             {selectedProduct.overall_nss !== undefined && (
               <p className={`text-xs font-medium mt-0.5 ${selectedProduct.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
                 NSS {selectedProduct.overall_nss > 0 ? '+' : ''}{selectedProduct.overall_nss}
@@ -152,7 +254,7 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
             </div>
             <input
               type="text"
-              placeholder="Cari nama produk atau paste URL femaledaily..."
+              placeholder="Cari nama produk atau paste URL lip product femaledaily..."
               value={query}
               onChange={e => {
                 setQuery(e.target.value)
@@ -178,19 +280,23 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
             )}
           </div>
 
-          {/* Tombol Scrape — hanya muncul saat URL terdeteksi */}
-          {isUrl && (
+          {/* Tombol Scrape — hanya muncul saat URL terdeteksi dan tidak sedang scraping */}
+          {isUrl && !isScraping && (
             <button
               onClick={handleScrape}
-              disabled={isScraping}
-              className="flex items-center gap-1.5 px-4 py-3 bg-primary text-white text-sm font-medium rounded-xl disabled:opacity-60 disabled:cursor-not-allowed hover:opacity-90 transition-all shrink-0"
+              className="flex items-center gap-1.5 px-4 py-3 bg-primary text-white text-sm font-medium rounded-xl hover:opacity-90 transition-all shrink-0"
             >
-              {isScraping
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <Sparkles className="w-4 h-4" />
-              }
-              {isScraping ? 'Scraping...' : 'Scrape'}
+              <Sparkles className="w-4 h-4" />
+              Scrape
             </button>
+          )}
+
+          {/* Spinner kecil saat 'requesting' */}
+          {scrapePhase === 'requesting' && (
+            <div className="flex items-center gap-1.5 px-4 py-3 bg-primary/10 text-primary text-sm font-medium rounded-xl shrink-0">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Memulai...
+            </div>
           )}
 
           {/* Chevron — hanya muncul saat bukan URL */}
@@ -203,16 +309,28 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
           )}
         </div>
 
-        {/* Info scraping berjalan */}
-        {isScraping && (
+        {/* Polling overlay */}
+        {scrapePhase === 'polling' && (
+          <ScrapePollingOverlay
+            elapsed={pollingElapsed}
+            onCancel={handleCancelPolling}
+          />
+        )}
+
+        {/* Info saat requesting */}
+        {scrapePhase === 'requesting' && (
           <p className="text-xs text-primary pl-1 animate-pulse">
-            Menganalisis produk... Bisa memakan waktu 1–3 menit.
+            Menghubungi server... Ini mungkin memakan waktu beberapa menit untuk produk dengan banyak ulasan.
           </p>
         )}
 
-        {/* Error scraping */}
+        {/* Error banner */}
         {scrapeError && (
-          <p className="text-xs text-negative pl-1">{scrapeError}</p>
+          <ErrorBanner
+            message={scrapeError}
+            type={scrapeError.includes('dihentikan') ? 'warning' : 'error'}
+            onDismiss={() => setScrapeError(null)}
+          />
         )}
 
         {/* Dropdown hasil pencarian */}
@@ -239,7 +357,15 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-text-main truncate">{product.product_name}</p>
-                  <p className="text-xs text-text-muted">{product.product_brand}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-xs text-text-muted">{product.product_brand}</p>
+                    {product.product_shade && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-text-muted">
+                        <Palette className="w-2.5 h-2.5" />
+                        {product.product_shade}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {product.overall_nss !== undefined && (
                   <span className={`text-xs font-semibold ml-auto shrink-0 ${product.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
