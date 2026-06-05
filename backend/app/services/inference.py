@@ -5,7 +5,6 @@ import torch.nn as nn                 # pyrefly: ignore [missing-import]
 import torch.nn.functional as F       # pyrefly: ignore [missing-import]
 # pyrefly: ignore [missing-import]
 from transformers import AutoModel, AutoTokenizer
-
 from app.models.product import ABSAAspect, SentimentDistribution
 
 # ==============================================================================

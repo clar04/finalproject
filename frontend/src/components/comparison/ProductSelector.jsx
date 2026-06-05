@@ -3,6 +3,26 @@ import { Search, Link, ChevronDown, X, Loader2, Sparkles, Palette } from 'lucide
 import { searchProducts, scrapeProduct, pollScrapeStatus, getProductById } from '../../services/api'
 import ScrapePollingOverlay, { ErrorBanner } from './ScrapePollingOverlay'
 
+/**
+ * Bersihkan URL dari query string, fragment, trailing slash, dan whitespace.
+ * Contoh:
+ *   https://reviews.femaledaily.com/lip/brand/?page=2&utm=ig#top
+ *   → https://reviews.femaledaily.com/lip/brand
+ */
+function cleanUrl(raw) {
+  try {
+    const parsed = new URL(raw.trim())
+    // Buang query (?...) dan fragment (#...)
+    parsed.search = ''
+    parsed.hash = ''
+    // Buang trailing slash
+    const clean = parsed.toString().replace(/\/+$/, '')
+    return clean
+  } catch {
+    return raw.trim()
+  }
+}
+
 export default function ProductSelector({ label, selectedProduct, onSelect, excludeId }) {
   const [query, setQuery]             = useState('')
   const [results, setResults]         = useState([])
@@ -132,7 +152,14 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
   // Scraping per-slot: dipanggil saat tombol "Scrape" diklik
   const handleScrape = async () => {
     if (!isUrl || isScraping) return
-    const url = query.trim()
+
+    // Bersihkan URL dari query string, fragment, trailing slash
+    const url = cleanUrl(query)
+
+    // Update input agar menampilkan URL yang sudah dibersihkan
+    if (url !== query.trim()) {
+      setQuery(url)
+    }
 
     try {
       setScrapePhase('requesting')

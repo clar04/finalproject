@@ -6,7 +6,7 @@ from app.services.scraper import scrape_product_info, _get_lock
 from fastapi.concurrency import run_in_threadpool
 from app.services.inference import run_inference, calculate_nss_and_breakdown, group_reviews_by_id
 from app.services.product_service import get_all_products, get_product_by_id, save_product, search_products, get_product_by_url
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 import asyncio
 
 # ── Router: general product endpoints ────────────────────────
@@ -26,6 +26,25 @@ LIP_KEYWORDS = [
     "lip-gloss", "lipgloss", "lip-balm", "lipbalm", "liptint",
     "liquid-lipstick", "matte-lip", "lip-liner", "lipliner",
 ]
+
+
+def _normalize_url(url: str) -> str:
+    """
+    Bersihkan URL dari noise sebelum diproses:
+      - Strip whitespace
+      - Buang query string (?page=3&utm_source=ig, dll)
+      - Buang fragment (#reviews, dll)
+      - Buang trailing slash di path
+    Contoh:
+      https://reviews.femaledaily.com/lip/lipstick/brand/?page=2&utm=ig#top
+      → https://reviews.femaledaily.com/lip/lipstick/brand
+    """
+    try:
+        parsed = urlparse(url.strip())
+        clean_path = parsed.path.rstrip("/")
+        return urlunparse((parsed.scheme, parsed.netloc, clean_path, "", "", ""))
+    except Exception:
+        return url.strip()
 
 
 def _is_lip_url(url: str) -> bool:
@@ -69,7 +88,8 @@ async def get_scrape_status(url: str = Query(..., description="URL produk yang s
     Returns:
         { status: "running" | "done" | "error" | "idle", product_id?: str, error?: str }
     """
-    status_info = _scrape_status.get(url)
+    clean_url = _normalize_url(url)
+    status_info = _scrape_status.get(clean_url)
     if not status_info:
         return {"status": "idle"}
     return status_info
@@ -89,6 +109,9 @@ async def scrape_and_analyze(body: ScrapeRequest):
     Concurrency guard:
     - Per-URL async lock prevents duplicate concurrent scrapes [409]
     """
+    # ── 0. Normalisasi URL — buang query string, fragment, trailing slash ─────
+    body.url = _normalize_url(body.url)
+
     # ── 1. Validasi domain Female Daily ───────────────────────────────────────
     try:
         parsed = urlparse(body.url)
