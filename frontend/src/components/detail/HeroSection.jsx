@@ -39,7 +39,7 @@ export default function HeroSection({ product, analysisTime }) {
     {
       icon: TrendingUp,
       label: 'Net Sentiment Score',
-      value: `${overall_nss > 0 ? '+' : ''}${overall_nss}`,
+      value: String(overall_nss),
       color: 'bg-positive/10',
       iconColor: 'text-positive',
     },
@@ -53,10 +53,10 @@ export default function HeroSection({ product, analysisTime }) {
   ]
 
   return (
-    <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+    <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
 
-      {/* Product image placeholder */}
-      <div className="aspect-square bg-surface rounded-2xl border border-border flex items-center justify-center shadow-sm overflow-hidden relative">
+      {/* Product image — constrained height on mobile */}
+      <div className="w-full max-h-64 sm:max-h-80 lg:max-h-none lg:aspect-square bg-surface rounded-2xl border border-border flex items-center justify-center shadow-sm overflow-hidden relative">
         {product.product_image ? (
           <img src={product.product_image} alt={product_name} className="w-full h-full object-contain p-4" />
         ) : (

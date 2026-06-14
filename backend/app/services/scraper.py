@@ -56,21 +56,33 @@ def _get_lock(url: str) -> asyncio.Lock:
 # 1.1 HEADLESS CRAWLER — Playwright Async
 # ──────────────────────────────────────────────
 
-async def _fetch_page_html(browser, url: str) -> str:
+async def _fetch_page_html(browser, url: str, wait_for_selector: str | None = None) -> str:
     """
     Open a single URL in a fresh Playwright browser context and return
     the fully JS-rendered HTML.
 
+    Parameters
+    ----------
+    wait_for_selector : str | None
+        If provided, Playwright will wait for this CSS selector to appear
+        in the DOM before capturing page HTML. Useful for page 1 where
+        product metadata elements must be fully rendered before extraction.
+
     Wraps _fetch_with_retry so each call benefits from auto-retry.
     """
-    return await _fetch_with_retry(browser, url)
+    return await _fetch_with_retry(browser, url, wait_for_selector=wait_for_selector)
 
 
 # ──────────────────────────────────────────────
 # 1.2 RESILIENT SCRAPING — Auto-Retry + Backoff
 # ──────────────────────────────────────────────
 
-async def _fetch_with_retry(browser, url: str, attempt: int = 0) -> str:
+async def _fetch_with_retry(
+    browser,
+    url: str,
+    attempt: int = 0,
+    wait_for_selector: str | None = None,
+) -> str:
     """
     Fetch a URL using Playwright with automatic retry on failure.
 
@@ -78,6 +90,8 @@ async def _fetch_with_retry(browser, url: str, attempt: int = 0) -> str:
       - Up to MAX_RETRIES (3) attempts total
       - Exponential backoff: 2s → 4s → 8s between retries
       - On every attempt, a fresh browser context is created and closed
+      - If wait_for_selector is given, waits for that element before
+        capturing HTML (used on page 1 to ensure metadata is rendered)
 
     Raises the last exception if all retries are exhausted.
     """
@@ -95,8 +109,21 @@ async def _fetch_with_retry(browser, url: str, attempt: int = 0) -> str:
             # Page partially loaded — still try to get content
             print(f"[Scraper] Timeout navigating to {url} — proceeding with partial content.")
 
-        # Wait for JS to hydrate the review cards
-        await page.wait_for_timeout(JS_WAIT_MS)
+        # If a specific selector is requested (e.g. product metadata on page 1),
+        # wait for it explicitly — otherwise fall back to fixed JS_WAIT_MS.
+        if wait_for_selector:
+            try:
+                await page.wait_for_selector(wait_for_selector, timeout=JS_WAIT_MS * 2)
+            except Exception:
+                # Element never appeared — still proceed with whatever rendered
+                print(
+                    f"[Scraper] ⚠ Selector '{wait_for_selector}' not found on {url} "
+                    "— falling back to timed wait."
+                )
+                await page.wait_for_timeout(JS_WAIT_MS)
+        else:
+            # Wait for JS to hydrate the review cards
+            await page.wait_for_timeout(JS_WAIT_MS)
 
         html = await page.content()
         return html
@@ -109,7 +136,7 @@ async def _fetch_with_retry(browser, url: str, attempt: int = 0) -> str:
                 f"in {wait_seconds}s for {url} — {exc}"
             )
             await asyncio.sleep(wait_seconds)
-            return await _fetch_with_retry(browser, url, attempt + 1)
+            return await _fetch_with_retry(browser, url, attempt + 1, wait_for_selector)
         print(f"[Scraper] ✗ All {MAX_RETRIES} attempts failed for {url}: {exc}")
         raise
 
@@ -300,23 +327,54 @@ def _extract_product_meta(soup: BeautifulSoup) -> tuple[str, str, str | None, st
     """
     Extract (product_name, product_brand, product_image, product_shade) from page 1 HTML.
     Returns safe defaults when elements are not found.
-    """
-    name_tag  = soup.select_one('[class*="product-name"]') or soup.find("h1")
-    brand_tag = soup.select_one('[class*="product-brand"]') or soup.select_one('[class*="brand-name"]')
-    img_tag   = soup.find("img", src=re.compile(r"image\.femaledaily\.com.*/prod-pics/"))
 
-    # Shade: cari elemen dengan class yang mengandung "product-shade"
-    shade_tag = soup.select_one('[class*="product-shade"]')
+    Female Daily uses JSX-scoped CSS classes, so every element's class attribute
+    looks like: "jsx-XXXXXXXX jsx-YYYYYYYY product-name"
+    We target the stable semantic class names directly (.product-name, etc.)
+    first, then fall back to the broader [class*=...] attribute selector.
+    """
+    # ── Product name ─────────────────────────────────────────────────────────
+    # Try stable class first, then substring match, then <h1> as last resort
+    name_tag = (
+        soup.select_one(".product-name")
+        or soup.select_one('[class*="product-name"]')
+        or soup.find("h1")
+    )
+
+    # ── Brand ────────────────────────────────────────────────────────────────
+    brand_tag = (
+        soup.select_one(".product-brand")
+        or soup.select_one('[class*="product-brand"]')
+        or soup.select_one(".brand-name")
+        or soup.select_one('[class*="brand-name"]')
+    )
+
+    # ── Shade ────────────────────────────────────────────────────────────────
+    shade_tag = (
+        soup.select_one(".product-shade")
+        or soup.select_one('[class*="product-shade"]')
+    )
+
+    # ── Product image ────────────────────────────────────────────────────────
+    img_tag = soup.find("img", src=re.compile(r"image\.femaledaily\.com.*/prod-pics/"))
 
     product_name  = name_tag.get_text(strip=True)  if name_tag  else "Unknown Product"
     product_brand = brand_tag.get_text(strip=True) if brand_tag else "Unknown Brand"
     product_shade = shade_tag.get_text(strip=True) if shade_tag else None
+
+    # Clean up: remove leading/trailing whitespace and collapse internal spaces
+    product_name  = " ".join(product_name.split())
+    product_brand = " ".join(product_brand.split())
+    if product_shade:
+        product_shade = " ".join(product_shade.split())
 
     product_image = None
     if img_tag and img_tag.get("src"):
         src = img_tag["src"]
         product_image = ("https:" + src) if src.startswith("//") else src
 
+    print(f"[Scraper] Brand: {product_brand!r}")
+    print(f"[Scraper] Name : {product_name!r}")
     print(f"[Scraper] Shade: {product_shade!r}")
     return product_name, product_brand, product_image, product_shade
 
@@ -369,7 +427,10 @@ async def scrape_product_info(url: str, days: int | None = None) -> dict:
                 print(f"[Scraper] Fetching page {page_num}: {paged_url}")
 
                 try:
-                    html = await _fetch_page_html(browser, paged_url)
+                    # On page 1 we need product metadata — wait explicitly for
+                    # .product-name to be hydrated before capturing HTML.
+                    selector = ".product-name" if page_num == 1 else None
+                    html = await _fetch_page_html(browser, paged_url, wait_for_selector=selector)
                 except Exception as exc:
                     print(f"[Scraper] ✗ Giving up on page {page_num} after retries: {exc}")
                     break
@@ -379,7 +440,7 @@ async def scrape_product_info(url: str, days: int | None = None) -> dict:
                 # Metadata — extracted once from the first page
                 if page_num == 1:
                     product_name, product_brand, product_image, product_shade = _extract_product_meta(soup)
-                    print(f"[Scraper] Product: {product_brand} – {product_name}")
+                    print(f"[Scraper] Product: {product_brand} – {product_name} (shade: {product_shade})")
 
                 page_reviews, stop_early = _extract_reviews_from_page(
                     soup, days, seen_hashes

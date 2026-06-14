@@ -1,5 +1,6 @@
 # pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from app.models.product import ScrapeRequest
 from app.services.scraper import scrape_product_info, _get_lock
 # pyrefly: ignore [missing-import]
@@ -58,9 +59,19 @@ def _is_lip_url(url: str) -> bool:
 
 @router.get("/products")
 async def list_products():
-    """Return all products stored in MongoDB (without reviews for speed)."""
+    """Return all products stored in MongoDB (without reviews for speed).
+
+    Cache-Control:
+      max-age=60              → browser boleh pakai cached response selama 60 detik
+      stale-while-revalidate  → boleh tampilkan data lama sambil fetch di background
+    """
     products = await get_all_products()
-    return {"products": products}
+    return JSONResponse(
+        content={"products": products},
+        headers={
+            "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+        },
+    )
 
 
 @router.get("/products/search")
@@ -68,7 +79,12 @@ async def search(q: str = ""):
     """Cari produk di DB berdasarkan nama atau brand."""
     if not q:
         return []
-    return await search_products(q)
+    results = await search_products(q)
+    # Search results: cache singkat 10 detik (data real-time, tidak perlu lama)
+    return JSONResponse(
+        content=results,
+        headers={"Cache-Control": "public, max-age=10"},
+    )
 
 
 @router.get("/products/{product_id}")

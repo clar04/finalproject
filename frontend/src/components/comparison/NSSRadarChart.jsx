@@ -54,9 +54,6 @@ export default function NSSRadarChart({ product1, product2 }) {
       <h2 className="text-base font-semibold text-text-main mb-1 text-center">
         Perbandingan Aspek
       </h2>
-      <p className="text-xs text-text-muted text-center mb-6">
-        Net Sentiment Score per aspek (−100 hingga +100)
-      </p>
 
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">

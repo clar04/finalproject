@@ -45,8 +45,8 @@ export default function ABSABreakdown({ aspects }) {
                     {total.toLocaleString('id-ID')} mention
                   </span>
                 </div>
-                <span className={`text-xs font-semibold ${nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  NSS {nss > 0 ? '+' : ''}{nss}
+                <span className={`text-xs font-semibold tabular-nums ${nss >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  NSS {nss}
                 </span>
               </div>
 

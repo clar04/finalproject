@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { GitCompare, Loader2, Clock, TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react'
+import { GitCompare, Loader2, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 import Navbar from '../components/shared/Navbar'
 import ProductSelector from '../components/comparison/ProductSelector'
 import LoadingOverlay from '../components/comparison/LoadingOverlay'
@@ -22,8 +22,8 @@ function NSSBadge({ label, nss }) {
   return (
     <div className="flex-1 bg-surface border border-border rounded-xl p-4 text-center">
       <p className="text-xs text-text-muted mb-1 truncate px-2">{label}</p>
-      <p className={`text-2xl font-bold ${isPos ? 'text-positive' : 'text-negative'}`}>
-        {nss > 0 ? '+' : ''}{nss}
+      <p className={`text-2xl font-bold tabular-nums ${isPos ? 'text-positive' : 'text-negative'}`}>
+        {nss}
       </p>
       <p className="text-[10px] text-text-muted mt-0.5">Net Sentiment Score</p>
     </div>
@@ -40,10 +40,6 @@ function NSSComparisonTable({ product1, product2 }) {
       <h2 className="text-base font-semibold text-text-main mb-1">
         Perbandingan NSS per Aspek
       </h2>
-      <p className="text-xs text-text-muted mb-5">
-        NSS = (positif − negatif) / total × 100. Ikon{' '}
-        <TrendingUp className="w-3 h-3 inline text-positive" /> menandai produk yang unggul pada aspek tersebut.
-      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -80,8 +76,7 @@ function NSSComparisonTable({ product1, product2 }) {
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
                         winner === 1 ? 'font-bold' : ''
                       } ${nss1 >= 0 ? 'text-positive' : 'text-negative'}`}>
-                        {winner === 1 && <TrendingUp className="w-3 h-3 shrink-0" />}
-                        {nss1 > 0 ? '+' : ''}{nss1}
+                        {nss1}
                       </span>
                     ) : (
                       <span className="text-xs text-text-muted">—</span>
@@ -93,8 +88,7 @@ function NSSComparisonTable({ product1, product2 }) {
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
                         winner === 2 ? 'font-bold' : ''
                       } ${nss2 >= 0 ? 'text-positive' : 'text-negative'}`}>
-                        {winner === 2 && <TrendingUp className="w-3 h-3 shrink-0" />}
-                        {nss2 > 0 ? '+' : ''}{nss2}
+                        {nss2}
                       </span>
                     ) : (
                       <span className="text-xs text-text-muted">—</span>
@@ -240,11 +234,11 @@ export default function Compare() {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
 
         {/* Header */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-6 sm:mb-10">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 mb-4">
             <GitCompare className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold text-text-main">Komparasi Produk</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold text-text-main">Komparasi Produk</h1>
           <p className="text-sm text-text-muted mt-2 max-w-lg mx-auto">
             Bandingkan dua produk bibir berdasarkan analisis sentimen ulasan Female Daily.
             Cari dari database atau paste URL untuk produk baru.
@@ -334,7 +328,7 @@ export default function Compare() {
             )}
 
             {/* Overall NSS */}
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <NSSBadge label={result.product1.product_name} nss={result.product1.overall_nss} />
               <NSSBadge label={result.product2.product_name} nss={result.product2.overall_nss} />
             </div>

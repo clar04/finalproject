@@ -247,8 +247,8 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
               </span>
             )}
             {selectedProduct.overall_nss !== undefined && (
-              <p className={`text-xs font-medium mt-0.5 ${selectedProduct.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-                NSS {selectedProduct.overall_nss > 0 ? '+' : ''}{selectedProduct.overall_nss}
+              <p className={`text-xs font-medium mt-0.5 tabular-nums ${selectedProduct.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
+                NSS {selectedProduct.overall_nss}
               </p>
             )}
           </div>
@@ -395,8 +395,8 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
                   </div>
                 </div>
                 {product.overall_nss !== undefined && (
-                  <span className={`text-xs font-semibold ml-auto shrink-0 ${product.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-                    {product.overall_nss > 0 ? '+' : ''}{product.overall_nss}
+                  <span className={`text-xs font-semibold tabular-nums ml-auto shrink-0 ${product.overall_nss >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    {product.overall_nss}
                   </span>
                 )}
               </button>

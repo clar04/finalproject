@@ -17,8 +17,6 @@ services:
   backend:
     build: ./backend
     container_name: fastapi_backend
-    volumes:
-      - ./backend:/app
     environment:
       - MONGODB_URI=${MONGODB_URI}
       - MONGODB_DB=${MONGODB_DB}
@@ -41,10 +39,7 @@ services:
     stdin_open: true
     tty: true
 
-volumes:
-  mongodb_data:
-
-cloudflared-uat:
+  cloudflared-uat:
     image: cloudflare/cloudflared:latest
     container_name: uat_tunnel
     restart: unless-stopped
@@ -52,3 +47,6 @@ cloudflared-uat:
     depends_on:
       - backend
       - frontend
+
+volumes:
+  mongodb_data:
