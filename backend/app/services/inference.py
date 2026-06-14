@@ -356,43 +356,118 @@ def run_inference(reviews_raw: list[dict]) -> list[dict]:
 # 5. NSS CALCULATION
 # ==============================================================================
 
+MINIMUM_REVIEW_THRESHOLD = 25
+
+
+def calculate_nss_with_metadata(reviews_flat: list, aspect: str) -> dict:
+    """
+    Hitung NSS per aspek dengan metadata reliabilitas.
+    Formula NSS tetap standar: (pos - neg) / total × 100
+    Metadata tambahan digunakan frontend untuk warning display.
+    """
+    aspect_reviews = [
+        r for r in reviews_flat
+        if r.get('aspect') == aspect and r.get('sentiment') != 'no_aspect'
+    ]
+
+    review_count = len(aspect_reviews)
+
+    if review_count == 0:
+        return {
+            'nss': None,
+            'review_count': 0,
+            'is_low_count': True,
+            'low_count_warning': 'Tidak ada ulasan yang membahas aspek ini.',
+        }
+
+    pos = sum(1 for r in aspect_reviews if r.get('sentiment') == 'positive')
+    neg = sum(1 for r in aspect_reviews if r.get('sentiment') == 'negative')
+    nss = round((pos - neg) / review_count * 100, 1)
+
+    is_low_count = review_count < MINIMUM_REVIEW_THRESHOLD
+
+    return {
+        'nss': nss,
+        'review_count': review_count,
+        'is_low_count': is_low_count,
+        'low_count_warning': (
+            f'Skor aspek ini dihitung dari {review_count} ulasan '
+            f'(di bawah threshold {MINIMUM_REVIEW_THRESHOLD}). '
+            f'Hasil mungkin belum representatif.'
+        ) if is_low_count else None,
+    }
+
+
+def calculate_overall_nss_with_metadata(absa_aspects: list) -> dict:
+    """
+    Hitung overall NSS dari rata-rata NSS per aspek.
+    Formula tetap standar, metadata low_count diwariskan dari aspek.
+    """
+    valid_aspects = [a for a in absa_aspects if a.get('nss') is not None]
+
+    if not valid_aspects:
+        return {
+            'overall_nss': None,
+            'overall_is_low_confidence': True,
+            'overall_low_count_warning': 'Tidak cukup data untuk menghitung skor keseluruhan.',
+        }
+
+    overall_nss = round(
+        sum(a['nss'] for a in valid_aspects) / len(valid_aspects), 1
+    )
+
+    low_count_aspects = [a for a in valid_aspects if a.get('is_low_count')]
+
+    aspect_labels = {
+        'pigmentation': 'Pigmentasi', 'longevity': 'Ketahanan',
+        'texture': 'Tekstur', 'hydration': 'Hidrasi', 'price': 'Harga',
+    }
+
+    warning = None
+    if low_count_aspects:
+        names = [aspect_labels.get(a['aspect'], a['aspect']) for a in low_count_aspects]
+        warning = (
+            f'Skor keseluruhan mungkin belum representatif karena '
+            f'aspek {", ".join(names)} memiliki ulasan yang terbatas '
+            f'(< {MINIMUM_REVIEW_THRESHOLD} ulasan).'
+        )
+
+    return {
+        'overall_nss': overall_nss,
+        'overall_is_low_confidence': len(low_count_aspects) > len(valid_aspects) / 2,
+        'overall_low_count_warning': warning,
+    }
+
+
 def calculate_nss_and_breakdown(reviews: list[dict]) -> dict:
     """
     Aggregate per-aspect NSS and overall sentiment distribution.
-
-    NSS = ((positive - negative) / total) * 100
-
-    Catatan:
-    - reviews di sini adalah hasil expanded ABSA.
-    - no_aspect sudah di-skip saat inference.
     """
     aspect_names = [a.lower() for a in ASPECTS]
 
-    absa_aspects = []
+    absa_aspects_raw = []
     nss_scores = {}
 
     for aspect in aspect_names:
         aspect_reviews = [r for r in reviews if r.get('aspect') == aspect]
-
-        if not aspect_reviews:
-            continue
-
         pos = sum(1 for r in aspect_reviews if r.get('sentiment') == 'positive')
         neg = sum(1 for r in aspect_reviews if r.get('sentiment') == 'negative')
         neu = sum(1 for r in aspect_reviews if r.get('sentiment') == 'neutral')
 
-        total = pos + neg + neu
-        nss = round(((pos - neg) / total) * 100) if total > 0 else 0
+        nss_meta = calculate_nss_with_metadata(reviews, aspect)
 
-        absa_aspects.append(ABSAAspect(
+        absa_aspects_raw.append(ABSAAspect(
             aspect=aspect,
             positive=pos,
             negative=neg,
             neutral=neu,
-            nss=nss,
-        ))
+            **nss_meta,
+        ).model_dump())
 
-        nss_scores[aspect] = nss
+        if nss_meta['nss'] is not None:
+            nss_scores[aspect] = nss_meta['nss']
+
+    overall_meta = calculate_overall_nss_with_metadata(absa_aspects_raw)
 
     review_sentiments: dict[str, dict[str, int]] = {}
 
@@ -425,14 +500,13 @@ def calculate_nss_and_breakdown(reviews: list[dict]) -> dict:
         else:
             total_neu += 1
 
-    total_unique = total_pos + total_neg + total_neu
-    overall_nss = round(((total_pos - total_neg) / total_unique) * 100) if total_unique > 0 else 0
-
     return {
-        'overall_nss': overall_nss,
-        'nss_scores': nss_scores,
-        'absa_aspects': [a.model_dump() for a in absa_aspects],
-        'sentiment_distribution': SentimentDistribution(
+        'overall_nss':               overall_meta['overall_nss'],
+        'overall_is_low_confidence': overall_meta['overall_is_low_confidence'],
+        'overall_low_count_warning': overall_meta['overall_low_count_warning'],
+        'nss_scores':                nss_scores,
+        'absa_aspects':              absa_aspects_raw,
+        'sentiment_distribution':    SentimentDistribution(
             positive=total_pos,
             negative=total_neg,
             neutral=total_neu,

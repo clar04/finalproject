@@ -27,7 +27,7 @@ export default function ABSABreakdown({ aspects }) {
       </div>
 
       <div className="space-y-5">
-        {aspects.map(({ aspect, positive, negative, neutral = 0, nss }) => {
+        {aspects.map(({ aspect, positive, negative, neutral = 0, nss, is_low_count, low_count_warning }) => {
           const total = positive + negative + neutral
           const posPercent = total > 0 ? (positive / total) * 100 : 0
           const negPercent = total > 0 ? (negative / total) * 100 : 0
@@ -45,8 +45,8 @@ export default function ABSABreakdown({ aspects }) {
                     {total.toLocaleString('id-ID')} mention
                   </span>
                 </div>
-                <span className={`text-xs font-semibold tabular-nums ${nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  NSS {nss}
+                <span className={`text-xs font-semibold tabular-nums ${nss == null ? 'text-text-muted' : nss >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {nss == null ? 'NSS –' : `NSS ${nss}`}
                 </span>
               </div>
 
@@ -107,6 +107,15 @@ export default function ABSABreakdown({ aspects }) {
                   <span className="w-2 h-2 rounded-full bg-negative inline-block" />
                 </div>
               </div>
+
+              {/* Low-count warning */}
+              {is_low_count && low_count_warning && (
+                <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 mt-2
+                                bg-amber-50 border border-amber-200 text-amber-800">
+                  <span className="mt-0.5 flex-shrink-0">⚠️</span>
+                  <span>{low_count_warning}</span>
+                </div>
+              )}
             </div>
           )
         })}

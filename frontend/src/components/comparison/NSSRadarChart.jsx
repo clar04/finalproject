@@ -11,30 +11,73 @@ const ASPECT_LABELS = {
   price:        'Harga',
 }
 
-// NSS range -100 s/d +100, normalize ke 0-100 untuk radar
+const ASPECT_KEYS = ['pigmentation', 'longevity', 'texture', 'hydration', 'price']
+
 const normalize = (nss) => Math.max(0, Math.min(100, ((nss + 100) / 200) * 100))
 
-export default function NSSRadarChart({ product1, product2 }) {
-  const aspects = ['pigmentation', 'longevity', 'texture', 'hydration', 'price']
+function getLowCountAspects(product) {
+  if (!product.absa_aspects) return []
+  return product.absa_aspects.filter(a => a.is_low_count && a.low_count_warning)
+}
 
-  const data = aspects.map(key => ({
+function LowCountBadge({ aspectLabel, warning }) {
+  return (
+    <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2
+                    bg-amber-50 border border-amber-200 text-amber-800">
+      <span className="mt-0.5 flex-shrink-0">⚠️</span>
+      <span>
+        <span className="font-medium">{aspectLabel}: </span>
+        {warning}
+      </span>
+    </div>
+  )
+}
+
+function ProductWarnings({ product, dotColor }) {
+  const lowAspects = getLowCountAspects(product)
+  if (lowAspects.length === 0) return null
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ background: dotColor }}
+        />
+        <span className="text-xs font-medium text-text-main truncate">
+          {product.product_name}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1.5 pl-4">
+        {lowAspects.map(a => (
+          <LowCountBadge
+            key={a.aspect}
+            aspectLabel={ASPECT_LABELS[a.aspect] ?? a.aspect}
+            warning={a.low_count_warning}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function NSSRadarChart({ product1, product2 }) {
+  const data = ASPECT_KEYS.map(key => ({
     aspect: ASPECT_LABELS[key],
     [product1.product_name]: normalize(product1.nss_scores?.[key] ?? 0),
     [product2.product_name]: normalize(product2.nss_scores?.[key] ?? 0),
-    // Raw NSS untuk tooltip
     [`${product1.product_name}_raw`]: product1.nss_scores?.[key] ?? 0,
     [`${product2.product_name}_raw`]: product2.nss_scores?.[key] ?? 0,
   }))
 
-  // Custom tooltip yang tampilkan NSS asli (-100 to +100)
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
       <div className="bg-surface border border-border rounded-xl p-3 shadow-lg text-xs">
         <p className="font-semibold text-text-main mb-2">{label}</p>
         {payload.map((entry, idx) => {
-          const rawKey = `${entry.name}_raw`
-          const rawVal = data.find(d => d.aspect === label)?.[rawKey]
+          const rawVal = data.find(d => d.aspect === label)?.[`${entry.name}_raw`]
           return (
             <div key={idx} className="flex items-center gap-2 mb-1">
               <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
@@ -48,6 +91,10 @@ export default function NSSRadarChart({ product1, product2 }) {
       </div>
     )
   }
+
+  const hasAnyWarning =
+    getLowCountAspects(product1).length > 0 ||
+    getLowCountAspects(product2).length > 0
 
   return (
     <section className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
@@ -72,7 +119,7 @@ export default function NSSRadarChart({ product1, product2 }) {
             <Radar
               name={product1.product_name}
               dataKey={product1.product_name}
-              stroke="#D62828" 
+              stroke="#D62828"
               fill="#D62828"
               fillOpacity={0.4}
               strokeWidth={3}
@@ -80,7 +127,7 @@ export default function NSSRadarChart({ product1, product2 }) {
             <Radar
               name={product2.product_name}
               dataKey={product2.product_name}
-              stroke="#003049" 
+              stroke="#003049"
               fill="#003049"
               fillOpacity={0.4}
               strokeWidth={3}
@@ -89,12 +136,24 @@ export default function NSSRadarChart({ product1, product2 }) {
             <Legend
               wrapperStyle={{ paddingTop: 16, fontSize: 12, fontFamily: 'Poppins' }}
               formatter={(value) => (
-                <span style={{ color: '#3D2C30' }} className="truncate max-w-[140px] inline-block">{value}</span>
+                <span style={{ color: '#3D2C30' }} className="truncate max-w-[140px] inline-block">
+                  {value}
+                </span>
               )}
             />
           </RadarChart>
         </ResponsiveContainer>
       </div>
+
+      {hasAnyWarning && (
+        <div className="mt-4 pt-4 border-t border-border space-y-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
+            Catatan reliabilitas data
+          </p>
+          <ProductWarnings product={product1} dotColor="#D62828" />
+          <ProductWarnings product={product2} dotColor="#003049" />
+        </div>
+      )}
     </section>
   )
 }

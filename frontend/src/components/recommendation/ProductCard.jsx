@@ -35,6 +35,7 @@ export default function ProductCard({ product }) {
     nss_scores = {},
     overall_nss = 0,
     total_reviews = 0,
+    overall_is_low_confidence = false,
   } = product
 
   // Selalu tampilkan top 3 aspek berdasarkan nilai absolut NSS (paling signifikan)
@@ -118,9 +119,19 @@ export default function ProductCard({ product }) {
 
       {/* Footer: total reviews + CTA */}
       <div className="flex items-center justify-between mt-3 pt-2 border-t border-border">
-        <p className="text-[9px] sm:text-[10px] text-text-muted">
-          {total_reviews.toLocaleString('id-ID')} ulasan
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-[9px] sm:text-[10px] text-text-muted">
+            {total_reviews.toLocaleString('id-ID')} ulasan
+          </p>
+          {overall_is_low_confidence && (
+            <span
+              title="Data ulasan terbatas, skor mungkin belum representatif"
+              className="text-[9px] sm:text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 leading-none"
+            >
+              ⚠ Data terbatas
+            </span>
+          )}
+        </div>
         <span className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-[11px] font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">
           Detail <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
         </span>

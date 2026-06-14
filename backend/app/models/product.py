@@ -34,11 +34,14 @@ class SentimentDistribution(BaseModel):
 
 
 class ABSAAspect(BaseModel):
-    aspect:    str
-    positive:  int = 0
-    negative:  int = 0
-    neutral:   int = 0
-    nss:       float = 0.0
+    aspect:            str
+    positive:          int = 0
+    negative:          int = 0
+    neutral:           int = 0
+    nss:               Optional[float] = None
+    review_count:      int = 0
+    is_low_count:      bool = False
+    low_count_warning: Optional[str] = None
 
 
 class Review(BaseModel):
