@@ -39,6 +39,7 @@ class ABSAAspect(BaseModel):
     negative:          int = 0
     neutral:           int = 0
     nss:               Optional[float] = None
+    raw_nss:           Optional[float] = None
     review_count:      int = 0
     is_low_count:      bool = False
     low_count_warning: Optional[str] = None

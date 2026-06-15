@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Search, Link, ChevronDown, X, Loader2, Sparkles, Palette } from 'lucide-react'
-import { searchProducts, scrapeProduct, pollScrapeStatus, getProductById } from '../../services/api'
+import { getAllProducts, scrapeProduct, pollScrapeStatus, getProductById } from '../../services/api'
 import ScrapePollingOverlay, { ErrorBanner } from './ScrapePollingOverlay'
 
 /**
@@ -24,10 +24,9 @@ function cleanUrl(raw) {
 }
 
 export default function ProductSelector({ label, selectedProduct, onSelect, excludeId }) {
-  const [query, setQuery]             = useState('')
-  const [results, setResults]         = useState([])
-  const [isOpen, setIsOpen]           = useState(false)
-  const [isSearching, setIsSearching] = useState(false)
+  const [query, setQuery]       = useState('')
+  const [isOpen, setIsOpen]     = useState(false)
+  const [allProducts, setAllProducts] = useState([])
 
   // State scraping
   const [scrapePhase, setScrapePhase] = useState(null)
@@ -42,6 +41,26 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
   const isUrl      = query.trim().startsWith('http')
   const isScraping = scrapePhase !== null
 
+  // Preload semua produk sekali (pakai cache yang sama dengan Home)
+  useEffect(() => {
+    getAllProducts()
+      .then(data => setAllProducts(Array.isArray(data) ? data : []))
+      .catch(console.error)
+  }, [])
+
+  // Filter client-side — instan, tanpa debounce dan tanpa API call
+  const results = useMemo(() => {
+    if (!query.trim() || isUrl) return []
+    const q = query.trim().toLowerCase()
+    return allProducts
+      .filter(p =>
+        p._id !== excludeId &&
+        (p.product_name?.toLowerCase().includes(q) ||
+         p.product_brand?.toLowerCase().includes(q))
+      )
+      .slice(0, 10)
+  }, [query, allProducts, excludeId, isUrl])
+
   // Tutup dropdown kalau klik di luar
   useEffect(() => {
     const handler = (e) => {
@@ -52,27 +71,6 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
-
-  // Search dengan debounce 400ms (hanya kalau bukan URL)
-  useEffect(() => {
-    if (!query.trim() || query.trim().startsWith('http')) {
-      setResults([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearching(true)
-        const data = await searchProducts(query)
-        setResults(data.filter(p => p._id !== excludeId))
-      } catch (err) {
-        console.error(err)
-        setResults([])
-      } finally {
-        setIsSearching(false)
-      }
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [query, excludeId])
 
   // Cleanup saat unmount
   useEffect(() => {
@@ -97,7 +95,6 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
   const handleSelect = (product) => {
     onSelect(product)
     setQuery('')
-    setResults([])
     setIsOpen(false)
     setScrapeError(null)
     setScrapePhase(null)
@@ -106,7 +103,6 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
   const handleClear = () => {
     onSelect(null)
     setQuery('')
-    setResults([])
     setScrapeError(null)
     setScrapePhase(null)
     abortRef.current?.abort()
@@ -123,8 +119,8 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
     try {
       const result = await pollScrapeStatus(
         url,
-        (statusData) => {
-          setPollingElapsed(Math.floor((Date.now() - Date.now()) / 1000)) // dihandle oleh interval
+        (_statusData) => {
+          // elapsed dihandle oleh interval di startElapsedTimer
         },
         abortRef.current.signal,
         5000,
@@ -299,7 +295,7 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
             {query && !isScraping && (
               <button
                 type="button"
-                onClick={() => { setQuery(''); setResults([]); setScrapeError(null) }}
+                onClick={() => { setQuery(''); setScrapeError(null) }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
@@ -361,12 +357,9 @@ export default function ProductSelector({ label, selectedProduct, onSelect, excl
         )}
 
         {/* Dropdown hasil pencarian */}
-        {isOpen && !isUrl && !isScraping && (query.trim() || results.length > 0) && (
+        {isOpen && !isUrl && !isScraping && query.trim() && (
           <div className="absolute z-50 w-full mt-1.5 bg-surface border border-border rounded-xl shadow-lg overflow-hidden">
-            {isSearching && (
-              <p className="px-4 py-3 text-xs text-text-muted">Mencari...</p>
-            )}
-            {!isSearching && results.length === 0 && query.trim() && (
+            {results.length === 0 && (
               <p className="px-4 py-3 text-xs text-text-muted">
                 Produk tidak ditemukan di database.
               </p>

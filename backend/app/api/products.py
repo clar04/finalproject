@@ -201,6 +201,7 @@ async def scrape_and_analyze(body: ScrapeRequest):
                 "product_url":            raw["product_url"],
                 "total_reviews":          len(raw["reviews_raw"]),
                 "overall_nss":               analysis["overall_nss"],
+                "overall_raw_nss":           analysis["overall_raw_nss"],
                 "overall_is_low_confidence": analysis["overall_is_low_confidence"],
                 "overall_low_count_warning": analysis["overall_low_count_warning"],
                 "nss_scores":                analysis["nss_scores"],

@@ -1,4 +1,5 @@
 import { BarChart3 } from 'lucide-react'
+import { getNSSColor, getNSSLabel } from '../recommendation/ProductCard'
 
 const ASPECT_LABELS = {
   pigmentation: 'Pigmentasi',
@@ -9,8 +10,6 @@ const ASPECT_LABELS = {
 }
 
 export default function ABSABreakdown({ aspects }) {
-  // aspects: [{ aspect: 'texture', positive: 1823, negative: 312, neutral: 145, nss: 76 }]
-
   return (
     <section className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
       {/* Header */}
@@ -22,16 +21,21 @@ export default function ABSABreakdown({ aspects }) {
           <h2 className="text-base font-semibold text-text-main">
             Aspect-Based Sentiment Analysis
           </h2>
-          <p className="text-xs text-text-muted">Breakdown sentimen per atribut produk</p>
+          <p className="text-xs text-text-muted">
+            Breakdown sentimen per atribut produk
+          </p>
         </div>
       </div>
 
       <div className="space-y-5">
         {aspects.map(({ aspect, positive, negative, neutral = 0, nss, is_low_count, low_count_warning }) => {
-          const total = positive + negative + neutral
+          const total      = positive + negative + neutral
           const posPercent = total > 0 ? (positive / total) * 100 : 0
           const negPercent = total > 0 ? (negative / total) * 100 : 0
-          const neuPercent = total > 0 ? (neutral / total) * 100 : 0
+          const neuPercent = total > 0 ? (neutral  / total) * 100 : 0
+
+          const nssColor = nss == null ? 'text-text-muted' : getNSSColor(nss)
+          const nssLabel = nss == null ? null : getNSSLabel(nss)
 
           return (
             <div key={aspect}>
@@ -45,9 +49,21 @@ export default function ABSABreakdown({ aspects }) {
                     {total.toLocaleString('id-ID')} mention
                   </span>
                 </div>
-                <span className={`text-xs font-semibold tabular-nums ${nss == null ? 'text-text-muted' : nss >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  {nss == null ? 'NSS –' : `NSS ${nss}`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold tabular-nums ${nssColor}`}>
+                    {nss == null ? 'NSS –' : `NSS ${nss}`}
+                  </span>
+                  {nssLabel && (
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                      nss >= 50 ? 'bg-positive/10 text-positive' :
+                      nss >= 10 ? 'bg-amber-50 text-amber-700' :
+                      nss > -10 ? 'bg-border text-text-muted' :
+                      'bg-negative/10 text-negative'
+                    }`}>
+                      {nssLabel}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Stacked bar */}
@@ -66,7 +82,7 @@ export default function ABSABreakdown({ aspects }) {
                 )}
                 {neuPercent > 0 && (
                   <div
-                    className="h-full bg-neutral-s flex items-center justify-center transition-all duration-500"
+                    className="h-full flex items-center justify-center transition-all duration-500"
                     style={{ width: `${neuPercent}%`, backgroundColor: '#C9B8BD' }}
                   >
                     {neuPercent >= 12 && (

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { GitCompare, Loader2, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { GitCompare, Loader2, Clock, CheckCircle2, AlertCircle, Info, Trophy, Minus } from 'lucide-react'
 import Navbar from '../components/shared/Navbar'
 import ProductSelector from '../components/comparison/ProductSelector'
 import LoadingOverlay from '../components/comparison/LoadingOverlay'
 import NSSRadarChart from '../components/comparison/NSSRadarChart'
 import { useCompare } from '../context/CompareContext'
 import { compareProducts } from '../services/api'
+import { getNSSColor, getNSSBg, getNSSLabel } from '../components/recommendation/ProductCard'
 
 // ── Konstanta aspek ───────────────────────────────────────────
 const ASPECTS = [
@@ -16,17 +17,149 @@ const ASPECTS = [
   { key: 'price',        label: 'Harga'      },
 ]
 
+// ── NSS Scale Legend ─────────────────────────────────────────
+function NSSScaleLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-[10px] text-text-muted">
+      <span className="font-medium text-text-main text-xs">Skala NSS:</span>
+      <span className="flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-negative inline-block" />
+        &lt; −10 · Perlu Perhatian
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-border inline-block" />
+        −10 s/d 10 · Netral
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+        10 s/d 50 · Cukup Baik
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-positive inline-block" />
+        ≥ 50 · Sangat Baik
+      </span>
+    </div>
+  )
+}
+
 // ── NSS Badge (ringkasan skor keseluruhan) ────────────────────
 function NSSBadge({ label, nss }) {
-  const isPos = nss >= 0
+  const color = getNSSColor(nss)
+  const bg    = getNSSBg(nss)
+  const lbl   = getNSSLabel(nss)
   return (
     <div className="flex-1 bg-surface border border-border rounded-xl p-4 text-center">
       <p className="text-xs text-text-muted mb-1 truncate px-2">{label}</p>
-      <p className={`text-2xl font-bold tabular-nums ${isPos ? 'text-positive' : 'text-negative'}`}>
+      <p className={`text-2xl font-bold tabular-nums ${color}`}>
         {nss}
       </p>
       <p className="text-[10px] text-text-muted mt-0.5">Net Sentiment Score</p>
+      <span className={`inline-block mt-1 text-[9px] font-medium px-2 py-0.5 rounded-full ${bg} ${color}`}>
+        {lbl}
+      </span>
     </div>
+  )
+}
+
+// ── Info box NSS ─────────────────────────────────────────────
+function NSSInfoBox() {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 bg-primary/5 border border-primary/15 rounded-xl">
+      <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+      <div className="text-xs text-text-muted leading-relaxed">
+        <span className="font-semibold text-text-main">Apa itu NSS?</span>{' '}
+        Net Sentiment Score mengukur sentimen ulasan pada skala{' '}
+        <span className="font-medium text-negative">−100</span> (sangat negatif) hingga{' '}
+        <span className="font-medium text-positive">+100</span> (sangat positif).{' '}
+        Angka <span className="font-medium">0</span> berarti netral — jumlah ulasan positif dan negatif seimbang.
+      </div>
+    </div>
+  )
+}
+
+// ── Kesimpulan otomatis ───────────────────────────────────────
+function CompareConclusion({ product1, product2 }) {
+  const name1 = product1.product_name
+  const name2 = product2.product_name
+
+  const wins1 = [], wins2 = [], draws = []
+
+  ASPECTS.forEach(({ key, label }) => {
+    const n1 = product1.nss_scores?.[key]
+    const n2 = product2.nss_scores?.[key]
+    if (n1 == null || n2 == null) return
+    const diff = Math.abs(n1 - n2)
+    if (diff < 5) {
+      draws.push(label)
+    } else if (n1 > n2) {
+      wins1.push(label)
+    } else {
+      wins2.push(label)
+    }
+  })
+
+  const overallWinner =
+    product1.overall_nss > product2.overall_nss + 3 ? name1 :
+    product2.overall_nss > product1.overall_nss + 3 ? name2 :
+    null
+
+  return (
+    <section className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
+          <Trophy className="w-4 h-4 text-amber-600" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-text-main">Kesimpulan Perbandingan</h2>
+          <p className="text-xs text-text-muted">Ringkasan otomatis berdasarkan skor NSS per aspek</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {wins1.length > 0 && (
+          <div className="flex items-start gap-3 px-4 py-3 bg-positive/5 border border-positive/20 rounded-xl">
+            <span className="text-base shrink-0">🏆</span>
+            <p className="text-sm text-text-main">
+              <span className="font-semibold">{name1}</span> unggul pada aspek:{' '}
+              <span className="text-positive font-medium">{wins1.join(', ')}</span>
+            </p>
+          </div>
+        )}
+        {wins2.length > 0 && (
+          <div className="flex items-start gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl">
+            <span className="text-base shrink-0">🏆</span>
+            <p className="text-sm text-text-main">
+              <span className="font-semibold">{name2}</span> unggul pada aspek:{' '}
+              <span className="text-primary font-medium">{wins2.join(', ')}</span>
+            </p>
+          </div>
+        )}
+        {draws.length > 0 && (
+          <div className="flex items-start gap-3 px-4 py-3 bg-border/30 border border-border rounded-xl">
+            <Minus className="w-4 h-4 text-text-muted shrink-0 mt-0.5" />
+            <p className="text-sm text-text-muted">
+              Aspek <span className="font-medium text-text-main">{draws.join(', ')}</span> memiliki skor yang setara (selisih &lt; 5 poin).
+            </p>
+          </div>
+        )}
+        {overallWinner ? (
+          <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+            <span className="text-base shrink-0">⭐</span>
+            <p className="text-sm text-text-main">
+              Secara keseluruhan, <span className="font-semibold text-amber-700">{overallWinner}</span> memiliki NSS overall yang lebih tinggi.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 px-4 py-3 bg-border/20 border border-border rounded-xl mt-2">
+            <span className="text-base shrink-0">🤝</span>
+            <p className="text-sm text-text-muted">
+              Kedua produk memiliki NSS overall yang <span className="font-medium text-text-main">hampir setara</span>.
+              Pilih berdasarkan aspek yang paling penting untukmu.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -40,6 +173,9 @@ function NSSComparisonTable({ product1, product2 }) {
       <h2 className="text-base font-semibold text-text-main mb-1">
         Perbandingan NSS per Aspek
       </h2>
+      <p className="text-xs text-text-muted mb-4">
+        Skor NSS: −100 (sangat negatif) · 0 (netral) · +100 (sangat positif)
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -74,8 +210,8 @@ function NSSComparisonTable({ product1, product2 }) {
                   <td className="py-3 px-4 text-center">
                     {has1 ? (
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
-                        winner === 1 ? 'font-bold' : ''
-                      } ${nss1 >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        winner === 1 ? 'font-bold underline underline-offset-2' : ''
+                      } ${getNSSColor(nss1)}`}>
                         {nss1}
                       </span>
                     ) : (
@@ -86,8 +222,8 @@ function NSSComparisonTable({ product1, product2 }) {
                   <td className="py-3 pl-4 text-center">
                     {has2 ? (
                       <span className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${
-                        winner === 2 ? 'font-bold' : ''
-                      } ${nss2 >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        winner === 2 ? 'font-bold underline underline-offset-2' : ''
+                      } ${getNSSColor(nss2)}`}>
                         {nss2}
                       </span>
                     ) : (
@@ -100,6 +236,10 @@ function NSSComparisonTable({ product1, product2 }) {
           </tbody>
         </table>
       </div>
+
+      <div className="mt-4 pt-4 border-t border-border">
+        <NSSScaleLegend />
+      </div>
     </section>
   )
 }
@@ -109,13 +249,8 @@ function ProductReadinessBanner({ product1, product2 }) {
   const p1Ready = !!product1?._id
   const p2Ready = !!product2?._id
 
-  // Tidak perlu banner kalau keduanya belum ada, atau keduanya sudah siap
   if ((!product1 && !product2) || (p1Ready && p2Ready)) return null
-  // Kalau keduanya ada tapi keduanya belum punya _id, jangan tampilkan
   if (product1 && product2 && !p1Ready && !p2Ready) return null
-
-  const readyName  = p1Ready ? product1.product_name : product2?.product_name
-  const waitLabel  = !p1Ready && product1 ? 'Produk Pertama' : 'Produk Kedua'
 
   return (
     <div className="flex items-start gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl mb-4">
@@ -261,7 +396,7 @@ export default function Compare() {
           />
         </div>
 
-        {/* Banner status kesiapan produk (Poin 6) */}
+        {/* Banner status kesiapan produk */}
         {!isLoading && !showResults && (product1 || product2) && (
           <ProductReadinessBanner product1={product1} product2={product2} />
         )}
@@ -327,6 +462,9 @@ export default function Compare() {
               </div>
             )}
 
+            {/* NSS info box */}
+            <NSSInfoBox />
+
             {/* Overall NSS */}
             <div className="flex flex-wrap gap-4">
               <NSSBadge label={result.product1.product_name} nss={result.product1.overall_nss} />
@@ -338,6 +476,9 @@ export default function Compare() {
 
             {/* Tabel perbandingan per aspek */}
             <NSSComparisonTable product1={result.product1} product2={result.product2} />
+
+            {/* Kesimpulan otomatis */}
+            <CompareConclusion product1={result.product1} product2={result.product2} />
 
           </div>
         )}
