@@ -32,3 +32,4 @@ backend/app/m3v2ce_best.pt
 backend/app/m2_best.pt
 backend/app/*.pt
 *.pt
+/buku

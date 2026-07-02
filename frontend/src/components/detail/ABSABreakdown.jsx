@@ -56,8 +56,7 @@ export default function ABSABreakdown({ aspects }) {
                   {nssLabel && (
                     <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
                       nss >= 50 ? 'bg-positive/10 text-positive' :
-                      nss >= 10 ? 'bg-amber-50 text-amber-700' :
-                      nss > -10 ? 'bg-border text-text-muted' :
+                      nss >= 0  ? 'bg-amber-50 text-amber-700' :
                       'bg-negative/10 text-negative'
                     }`}>
                       {nssLabel}

@@ -24,15 +24,11 @@ function NSSScaleLegend() {
       <span className="font-medium text-text-main text-xs">Skala NSS:</span>
       <span className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-negative inline-block" />
-        &lt; −10 · Perlu Perhatian
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="w-2 h-2 rounded-full bg-border inline-block" />
-        −10 s/d 10 · Netral
+        &lt; 0 · Perlu Perhatian
       </span>
       <span className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-        10 s/d 50 · Cukup Baik
+        0 s/d 49 · Cukup Baik
       </span>
       <span className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-positive inline-block" />

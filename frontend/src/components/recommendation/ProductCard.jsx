@@ -2,28 +2,24 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Palette } from 'lucide-react'
 
 // ── NSS threshold warna (skala -100 s/d +100) ──────────────────
-// ≥ 50  → Sangat Baik  (hijau)
-// 10–49 → Cukup Baik   (kuning/amber)
-// -9–9  → Netral       (abu-abu)
-// < -10 → Perlu Perhatian (merah)
+// ≥ 50  → Sangat Baik      (hijau)
+// 0–49  → Cukup Baik       (kuning/amber)
+// < 0   → Perlu Perhatian  (merah)
 export function getNSSColor(score) {
   if (score >= 50) return 'text-positive'
-  if (score >= 10) return 'text-amber-600'
-  if (score > -10) return 'text-text-muted'
+  if (score >= 0)  return 'text-amber-600'
   return 'text-negative'
 }
 
 export function getNSSBg(score) {
   if (score >= 50) return 'bg-positive/10'
-  if (score >= 10) return 'bg-amber-50'
-  if (score > -10) return 'bg-border/40'
+  if (score >= 0)  return 'bg-amber-50'
   return 'bg-negative/10'
 }
 
 export function getNSSLabel(score) {
   if (score >= 50) return 'Sangat Baik'
-  if (score >= 10) return 'Cukup Baik'
-  if (score > -10) return 'Netral'
+  if (score >= 0)  return 'Cukup Baik'
   return 'Perlu Perhatian'
 }
 
@@ -101,8 +97,7 @@ export default function ProductCard({ product }) {
             const barWidth = Math.max(0, Math.min(100, ((score + 100) / 200) * 100))
             const barColor =
               score >= 50 ? 'bg-positive' :
-              score >= 10 ? 'bg-amber-400' :
-              score > -10 ? 'bg-border' :
+              score >= 0  ? 'bg-amber-400' :
               'bg-negative'
             return (
               <div key={key}>

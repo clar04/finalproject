@@ -1,5 +1,6 @@
 # pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException, Query
+# pyrefly: ignore [missing-import]
 from fastapi.responses import JSONResponse
 from app.models.product import ScrapeRequest
 from app.services.scraper import scrape_product_info, _get_lock
@@ -9,6 +10,7 @@ from app.services.inference import run_inference, calculate_nss_and_breakdown, g
 from app.services.product_service import get_all_products, get_product_by_id, save_product, search_products, get_product_by_url
 from urllib.parse import urlparse, urlunparse
 import asyncio
+import time
 
 # ── Router: general product endpoints ────────────────────────
 router = APIRouter(prefix="/api", tags=["products"])
@@ -179,42 +181,68 @@ async def scrape_and_analyze(body: ScrapeRequest):
         _scrape_status[body.url] = {"status": "running", "product_id": None, "error": None}
 
         try:
-            # 1. Scrape — Playwright async, tidak memblokir event loop FastAPI
-            #    `days` meneruskan filter waktu dari request body (None = semua ulasan)
-            raw = await scrape_product_info(body.url, days=body.days)
+            t_start = time.perf_counter()
 
-            # 2. Inference (juga di background thread)
+            # 1. Scrape — Playwright async, tidak memblokir event loop FastAPI
+            raw = await scrape_product_info(body.url, days=body.days)
+            t_scrape = time.perf_counter()
+
+            # 2. Inference (di background thread agar tidak blokir event loop)
             reviews_labeled = await run_in_threadpool(run_inference, raw["reviews_raw"])
+            t_infer = time.perf_counter()
 
             # 3. Calculate NSS & breakdown
             analysis = calculate_nss_and_breakdown(reviews_labeled)
 
             # 3b. Grouped reviews — satu entry per ulasan unik (untuk tab Per Ulasan)
             reviews_grouped = group_reviews_by_id(reviews_labeled)
+            t_nss = time.perf_counter()
 
             # 4. Build document
             product_doc = {
-                "product_name":           raw["product_name"],
-                "product_brand":          raw["product_brand"],
-                "product_image":          raw.get("product_image"),
-                "product_shade":          raw.get("product_shade"),
-                "product_url":            raw["product_url"],
-                "total_reviews":          len(raw["reviews_raw"]),
+                "product_name":              raw["product_name"],
+                "product_brand":             raw["product_brand"],
+                "product_image":             raw.get("product_image"),
+                "product_shade":             raw.get("product_shade"),
+                "product_url":               raw["product_url"],
+                "total_reviews":             len(raw["reviews_raw"]),
                 "overall_nss":               analysis["overall_nss"],
                 "overall_raw_nss":           analysis["overall_raw_nss"],
                 "overall_is_low_confidence": analysis["overall_is_low_confidence"],
                 "overall_low_count_warning": analysis["overall_low_count_warning"],
                 "nss_scores":                analysis["nss_scores"],
                 "absa_aspects":              analysis["absa_aspects"],
-                "sentiment_distribution": analysis["sentiment_distribution"],
-                "reviews":                reviews_labeled,
-                "reviews_grouped":        reviews_grouped,
-                "isTrending":             len(raw["reviews_raw"]) > 1000,
+                "sentiment_distribution":    analysis["sentiment_distribution"],
+                "reviews":                   reviews_labeled,
+                "reviews_grouped":           reviews_grouped,
+                "isTrending":                len(raw["reviews_raw"]) > 1000,
             }
 
             # 5. Save / upsert to MongoDB
             product_id = await save_product(product_doc)
+            t_db = time.perf_counter()
+
             product_doc["_id"] = product_id
+
+            # Timing summary — dicetak ke log server dan disertakan di response
+            n_reviews = len(raw["reviews_raw"])
+            timing = {
+                "scrape_sec":  round(t_scrape - t_start, 2),
+                "infer_sec":   round(t_infer  - t_scrape, 2),
+                "nss_sec":     round(t_nss    - t_infer,  2),
+                "db_save_sec": round(t_db     - t_nss,    2),
+                "total_sec":   round(t_db     - t_start,  2),
+                "n_reviews":   n_reviews,
+            }
+            print(
+                f"[LATENCY] {raw['product_name']}\n"
+                f"          Scraping  : {timing['scrape_sec']:.2f}s  ({n_reviews} ulasan)\n"
+                f"          Inference : {timing['infer_sec']:.2f}s\n"
+                f"          NSS calc  : {timing['nss_sec']:.2f}s\n"
+                f"          DB save   : {timing['db_save_sec']:.2f}s\n"
+                f"          TOTAL     : {timing['total_sec']:.2f}s"
+            )
+            product_doc["_timing"] = timing
 
             # 6. Update status = done
             _scrape_status[body.url] = {

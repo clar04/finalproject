@@ -129,8 +129,7 @@ export default function HeroSection({ product, analysisTime }) {
                     {isNSS && (
                       <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
                         overall_nss >= 50 ? 'bg-positive/10 text-positive' :
-                        overall_nss >= 10 ? 'bg-amber-50 text-amber-700' :
-                        overall_nss > -10 ? 'bg-border text-text-muted' :
+                        overall_nss >= 0  ? 'bg-amber-50 text-amber-700' :
                         'bg-negative/10 text-negative'
                       }`}>
                         {nssLabel}
@@ -164,17 +163,12 @@ export default function HeroSection({ product, analysisTime }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                <span className="text-amber-600 font-medium">10 s/d 49 — Cukup Baik</span>
+                <span className="text-amber-600 font-medium">0 s/d 49 — Cukup Baik</span>
                 <span className="text-text-muted">· ulasan mayoritas positif</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-border shrink-0" />
-                <span className="text-text-muted font-medium">−9 s/d 9 — Netral</span>
-                <span className="text-text-muted">· sentimen positif & negatif seimbang</span>
-              </div>
-              <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-negative shrink-0" />
-                <span className="text-negative font-medium">≤ −10 — Perlu Perhatian</span>
+                <span className="text-negative font-medium">&lt; 0 — Perlu Perhatian</span>
                 <span className="text-text-muted">· ulasan negatif mendominasi</span>
               </div>
             </div>
