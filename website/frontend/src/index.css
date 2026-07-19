@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply bg-background text-text-main font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar while keeping scroll behaviour (for mobile sort pill row, etc.) */
+  .scrollbar-none {
+    -ms-overflow-style: none;   /* IE/Edge */
+    scrollbar-width: none;      /* Firefox */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;              /* Chrome/Safari */
+  }
+}
